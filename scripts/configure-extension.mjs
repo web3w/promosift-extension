@@ -1,0 +1,12 @@
+import { readFile, writeFile } from 'node:fs/promises';
+const raw = process.argv[2];
+if (!raw) throw Error('Usage: npm run configure -- https://your-service-domain');
+const url = new URL(raw);
+if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('The service address may only contain a protocol, host, and optional port, no path or credentials');
+if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) throw Error('Production services must use HTTPS');
+const manifestFile = new URL('../manifest.json', import.meta.url);
+const manifest = JSON.parse(await readFile(manifestFile, 'utf8'));
+manifest.host_permissions = [`${url.origin}/*`, 'https://x.com/*', 'https://twitter.com/*'];
+await writeFile(new URL('../config.json', import.meta.url), JSON.stringify({ apiBase: url.origin }, null, 2) + '\n');
+await writeFile(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
+console.log(`PromoSift API set to: ${url.origin}. Reload the extension for this to take effect.`);

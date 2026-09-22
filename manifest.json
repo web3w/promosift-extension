@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extName__",
+  "version": "0.7.0",
+  "default_locale": "en",
+  "description": "__MSG_extDescription__",
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://promosift.app/*",
+    "https://x.com/*",
+    "https://twitter.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*",
+        "https://twitter.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "__MSG_extName__"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtAjXu388f0AJ8EgenX6VNh1U/H/xiCHlGPQuB7xRubSR3pKnn6PPN7SEeZNjZnfde2a4rj7PHR7E5jO458SCf/holyu4QO4yxdltbyDNQKmUWV5J09lq5Ps0GZBBBOULLspfkwZI7l1zEDoT9EckozysagvmRYd6WPP3fjOU3WcDYB+xDEJhBdmBwQPoRAl+/qX9TvsREoY32bebRvJ4hAnYqp/rVJ3xgiD/NYvEuD5nqesBMezcIEZx6fj+ycpzBaZkjz+OYecwLp6fzXtFP3L+Wmg4RT6OihyaxiVGYmx75ixxVf4Aq1MpKkokKo1uQOt3A9somDRBGJqxHCAcRQIDAQAB"
+}

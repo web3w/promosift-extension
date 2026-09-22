@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="color-scheme" content="dark" />
+  <title>PromoSift</title>
+  <link rel="icon" href="icons/brand.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="head">
+    <div class="brand">
+      <img class="logo" src="icons/brand.svg" alt="" width="40" height="40" />
+      <div>
+        <h1>PromoSift</h1>
+        <p class="sub" data-i18n="popupSubtitle"></p>
+      </div>
+    </div>
+    <label class="switch" data-i18n-title="popupToggleTitle">
+      <input type="checkbox" id="enabled" />
+      <span class="track"><span class="thumb"></span></span>
+    </label>
+  </header>
+
+  <!-- The logged-in identity and account credits stay one-to-one; logging in with the same email on another device restores them. -->
+  <section class="account" id="account" data-state="loading" aria-live="polite">
+    <div class="account-row">
+      <span class="plan" id="planName" data-i18n="accountConnecting"></span>
+      <span class="account-meta" id="accountMeta"></span>
+    </div>
+    <div class="account-note" id="accountEmail"></div>
+    <div class="account-note" id="accountNote"></div>
+    <div class="account-actions" id="accountActions" hidden>
+      <button type="button" class="link" id="refreshAccount" data-i18n="accountRefreshCredits"></button>
+      <button type="button" class="link" id="logout" data-i18n="accountLogout"></button>
+      <button type="button" class="link" id="logoutAll" data-i18n="accountLogoutAll"></button>
+    </div>
+    <div class="daily-check-in" id="checkInRow" hidden>
+      <button type="button" class="link" id="checkIn" disabled data-i18n="checkInQuerying"></button>
+      <span class="account-note" id="checkInNote" data-i18n="checkInNote"></span>
+    </div>
+    <div class="status" id="accountStatus" aria-live="polite"></div>
+  </section>
+
+  <section class="field" id="loginField" hidden>
+    <label class="label" for="email" data-i18n="loginLabel"></label>
+    <form class="inline-form" id="requestCodeForm">
+      <input id="email" type="email" autocomplete="email" required maxlength="254" data-i18n-placeholder="loginEmailPlaceholder" />
+      <button type="submit" id="requestCode" data-i18n="loginSendCode"></button>
+    </form>
+    <form class="inline-form login-code" id="loginForm">
+      <input id="loginCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required data-i18n-placeholder="loginCodePlaceholder" data-i18n-aria-label="loginCodeAriaLabel" />
+      <button type="submit" id="login" data-i18n="loginSubmit"></button>
+    </form>
+    <div class="status" id="loginStatus" aria-live="polite"></div>
+    <p class="advanced-note" data-i18n="loginFootnote"></p>
+  </section>
+
+  <section class="stats">
+    <div><b id="checked">0</b><span data-i18n="statsCheckedThisSession"></span></div>
+    <div><b id="ads" class="is-ad">0</b><span data-i18n="statsFlaggedAsAd"></span></div>
+    <div><b id="rate">–</b><span data-i18n="statsAdRate"></span></div>
+  </section>
+
+  <section class="field">
+    <div class="label" data-i18n="displayModeLabel"></div>
+    <div class="seg" data-name="mode" role="radiogroup">
+      <span class="seg-pill" aria-hidden="true"></span>
+      <button role="radio" data-value="label" data-i18n="displayModeLabelOnly"></button>
+      <button role="radio" data-value="fold" data-i18n="displayModeFold"></button>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="aiDetect" />
+      <span><span data-i18n="aiDetectLabel"></span><span class="hint" data-i18n="aiDetectHint"></span></span>
+    </label>
+  </section>
+
+  <section class="field">
+    <div class="label"><span data-i18n="keywordsLabel"></span> <span class="hint" data-i18n="keywordsHint"></span></div>
+    <div class="kw-box" id="kwBox">
+      <ul class="chips" id="chips" data-i18n-aria-label="keywordsAddedAriaLabel"></ul>
+      <input id="kwInput" type="text" maxlength="20" spellcheck="false" data-i18n-placeholder="keywordsPlaceholder" data-i18n-aria-label="keywordsAddAriaLabel" />
+    </div>
+    <label class="check">
+      <input type="checkbox" id="smartMatch" />
+      <span><span data-i18n="smartMatchLabel"></span><span class="hint" data-i18n="smartMatchHint"></span></span>
+    </label>
+  </section>
+
+  <section class="field">
+    <div class="label"><span data-i18n="sensitivityLabel"></span> <span class="hint" id="thresholdHint"></span></div>
+    <div class="seg" data-name="threshold" role="radiogroup">
+      <span class="seg-pill" aria-hidden="true"></span>
+      <button role="radio" data-value="0.8" data-i18n="sensitivityLow"></button>
+      <button role="radio" data-value="0.6" data-i18n="sensitivityMid"></button>
+      <button role="radio" data-value="0.4" data-i18n="sensitivityHigh"></button>
+    </div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

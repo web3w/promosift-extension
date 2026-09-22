@@ -1,0 +1,297 @@
+/* PromoSift injected styles. Everything is namespaced with a jev- prefix to avoid clashing with the site's own styles. */
+
+:root {
+  --jev-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --jev-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
+  --jev-ad-fg: #294c10;
+  --jev-ad-bg: rgba(184, 251, 99, 0.30);
+  --jev-ad-ring: rgba(91, 145, 36, 0.34);
+  --jev-ok-fg: #6b7280;
+  --jev-ok-bg: rgba(107, 114, 128, 0.08);
+  --jev-muted-fg: #9ca3af;
+  --jev-warn-fg: #b45309;
+  --jev-warn-bg: rgba(217, 119, 6, 0.1);
+
+  --jev-tip-bg: #ffffff;
+  --jev-tip-fg: #1f2328;
+  --jev-tip-sub: #6b7280;
+  --jev-tip-track: rgba(0, 0, 0, 0.06);
+  --jev-tip-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 8px 24px -4px rgba(0, 0, 0, 0.14);
+  --jev-kw-fg: #4b5563;
+  --jev-kw-bg: rgba(75, 85, 99, 0.12);
+  --jev-ai-fg: #6d4bd8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --jev-ad-fg: #b8fb63;
+    --jev-ad-bg: rgba(184, 251, 99, 0.12);
+    --jev-ad-ring: rgba(184, 251, 99, 0.3);
+    --jev-ok-fg: #9ca3af;
+    --jev-ok-bg: rgba(156, 163, 175, 0.12);
+    --jev-warn-fg: #f5a524;
+    --jev-warn-bg: rgba(245, 165, 36, 0.14);
+    --jev-tip-bg: #090f20;
+    --jev-tip-fg: #f7f9fc;
+    --jev-tip-sub: #9ca3af;
+    --jev-tip-track: rgba(255, 255, 255, 0.08);
+    --jev-tip-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+    --jev-kw-fg: #c3c7cf;
+    --jev-kw-bg: rgba(195, 199, 207, 0.14);
+    --jev-ai-fg: #b39dff;
+  }
+}
+
+/* X has its own light/dark setting independent of the OS; content.js writes data-jev-theme based on the page background. */
+:root[data-jev-theme="light"] {
+  --jev-ad-fg: #294c10;
+  --jev-ad-bg: rgba(184, 251, 99, 0.30);
+  --jev-ad-ring: rgba(91, 145, 36, 0.34);
+  --jev-ok-fg: #6b7280;
+  --jev-ok-bg: rgba(107, 114, 128, 0.08);
+  --jev-muted-fg: #9ca3af;
+  --jev-warn-fg: #b45309;
+  --jev-warn-bg: rgba(217, 119, 6, 0.1);
+  --jev-tip-bg: #ffffff;
+  --jev-tip-fg: #1f2328;
+  --jev-tip-sub: #6b7280;
+  --jev-tip-track: rgba(0, 0, 0, 0.06);
+  --jev-tip-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 8px 24px -4px rgba(0, 0, 0, 0.14);
+  --jev-kw-fg: #4b5563;
+  --jev-kw-bg: rgba(75, 85, 99, 0.12);
+  --jev-ai-fg: #6d4bd8;
+}
+:root[data-jev-theme="dark"] {
+  --jev-ad-fg: #b8fb63;
+  --jev-ad-bg: rgba(184, 251, 99, 0.12);
+  --jev-ad-ring: rgba(184, 251, 99, 0.3);
+  --jev-ok-fg: #9ca3af;
+  --jev-ok-bg: rgba(156, 163, 175, 0.12);
+  --jev-warn-fg: #f5a524;
+  --jev-warn-bg: rgba(245, 165, 36, 0.14);
+  --jev-tip-bg: #090f20;
+  --jev-tip-fg: #f7f9fc;
+  --jev-tip-sub: #9ca3af;
+  --jev-tip-track: rgba(255, 255, 255, 0.08);
+  --jev-tip-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 24px -4px rgba(0, 0, 0, 0.5);
+  --jev-kw-fg: #c3c7cf;
+  --jev-kw-bg: rgba(195, 199, 207, 0.14);
+  --jev-ai-fg: #b39dff;
+}
+
+/* ---------- Badge ---------- */
+
+.jev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font: 600 11px/18px var(--jev-font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  color: var(--jev-ok-fg);
+  background: var(--jev-ok-bg);
+  transition: transform 160ms var(--jev-ease-out), background-color 200ms ease, color 200ms ease;
+}
+
+.jev-badge:active { transform: scale(0.96); }
+.jev-badge:focus-visible { outline: 2px solid var(--jev-ad-ring); outline-offset: 1px; }
+
+/* Small dot before the status text: gets scanned faster than the label itself. */
+.jev-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.jev-badge[data-state="loading"] { color: var(--jev-muted-fg); background: transparent; box-shadow: inset 0 0 0 1px var(--jev-ok-bg); }
+.jev-badge[data-state="loading"]::before { opacity: 0.45; }
+.jev-badge[data-state="ok"] { color: var(--jev-ok-fg); background: var(--jev-ok-bg); }
+.jev-badge[data-state="ad"] { color: var(--jev-ad-fg); background: var(--jev-ad-bg); box-shadow: inset 0 0 0 1px var(--jev-ad-ring); }
+.jev-badge[data-state="error"] { color: var(--jev-warn-fg); background: var(--jev-warn-bg); }
+.jev-badge[data-state="kw"] { color: var(--jev-kw-fg); background: var(--jev-kw-bg); }
+/* AI-generated ratio: the badge's second segment. */
+.jev-ai-seg {
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  border-left-color: color-mix(in srgb, currentColor 30%, transparent);
+  color: var(--jev-ai-fg);
+}
+.jev-badge[data-placement="inside"] .jev-ai-seg { color: #fff; }
+
+/* Play a subtle fade/scale-in only once when the result appears; checking->result reuses the same element so it never replays. */
+.jev-badge[data-state="ad"],
+.jev-badge[data-state="ok"] {
+  animation: jev-settle 220ms var(--jev-ease-out);
+}
+@keyframes jev-settle {
+  from { opacity: 0.4; transform: scale(0.94); }
+}
+
+/* When a post has no timestamp/username anchor, float the badge in the top-left corner. */
+.jev-host { position: relative; }
+.jev-badge[data-placement="inside"] {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  margin: 0;
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.jev-badge[data-placement="inside"][data-state="loading"],
+.jev-badge[data-placement="inside"][data-state="ok"] { color: #fff; background: rgba(0, 0, 0, 0.35); }
+.jev-badge[data-placement="inside"][data-state="ad"] { color: #0b1020; background: #b8fb63; }
+.jev-badge[data-placement="inside"][data-state="ad"] .jev-ai-seg { color: #0b1020; }
+.jev-badge[data-placement="inside"][data-state="error"] { color: #fff; background: rgba(180, 83, 9, 0.85); }
+.jev-badge[data-placement="inside"][data-state="kw"] { color: #fff; background: rgba(60, 64, 72, 0.85); }
+.jev-badge[data-placement="inside"][data-state="loading"] { color: rgba(255, 255, 255, 0.85); background: rgba(0, 0, 0, 0.25); box-shadow: none; }
+
+/* ---------- Folding: ads (in fold mode) or content matching a blocked keyword ---------- */
+/* X posts collapse to a single line; clicking restores the content. */
+
+.jev-veil { display: none; }
+.jev-veil-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jev-veil-action { flex: none; font-weight: 600; }
+
+/* collapse: only the fold bar remains visible, everything else is hidden (X's virtual list remeasures height and the post below moves up to fill the gap). */
+.jev-fold[data-jev-fold="collapse"]:not(.jev-reveal) > :not(.jev-veil) { display: none !important; }
+.jev-fold[data-jev-fold="collapse"]:not(.jev-reveal) > .jev-veil {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: inherit;
+  font: 13px/20px var(--jev-font);
+  text-align: left;
+  color: var(--jev-muted-fg);
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms ease;
+}
+.jev-fold[data-jev-fold="collapse"] > .jev-veil::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--jev-ad-fg);
+  opacity: 0.8;
+}
+.jev-fold[data-jev-fold="collapse"] > .jev-veil .jev-veil-text { flex: 1; }
+.jev-fold[data-jev-fold="collapse"] > .jev-veil .jev-veil-action { color: var(--jev-tip-fg); }
+@media (hover: hover) and (pointer: fine) {
+  .jev-fold[data-jev-fold="collapse"] > .jev-veil:hover { background: var(--jev-ok-bg); }
+}
+.jev-fold[data-jev-fold="collapse"] > .jev-veil:focus-visible { outline: 2px solid var(--jev-ad-ring); outline-offset: -2px; }
+
+/* The expand/collapse animation for the single-line fold lives in content.js, and only plays for on-screen posts. */
+
+/* ---------- Detail tooltip ---------- */
+
+.jev-tip {
+  position: fixed;
+  z-index: 2147483646;
+  width: 220px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 10px;
+  font: 12px/1.5 var(--jev-font);
+  color: var(--jev-tip-fg);
+  background: var(--jev-tip-bg);
+  box-shadow: var(--jev-tip-shadow);
+  pointer-events: none;
+  transform-origin: var(--origin, top left);
+  opacity: 0;
+  transform: scale(0.97);
+  transition: opacity 120ms ease, transform 120ms var(--jev-ease-out);
+}
+/* Delay the first hover slightly, to avoid false triggers while scrolling past. */
+.jev-tip[data-open="true"] {
+  opacity: 1;
+  transform: none;
+  transition: opacity 150ms ease 250ms, transform 180ms var(--jev-ease-out) 250ms;
+}
+/* If one tooltip was just shown, the next adjacent one appears instantly. */
+.jev-tip[data-instant="true"][data-open="true"] { transition-duration: 0ms; transition-delay: 0ms; }
+
+.jev-tip-head { display: flex; align-items: baseline; justify-content: space-between; color: var(--jev-tip-sub); }
+.jev-tip-head strong { font-size: 20px; font-weight: 650; line-height: 1.2; color: var(--jev-tip-fg); font-variant-numeric: tabular-nums; }
+.jev-tip-head strong[data-ad="true"] { color: var(--jev-ad-fg); }
+
+.jev-meter { height: 4px; margin: 8px 0 10px; border-radius: 2px; background: var(--jev-tip-track); overflow: hidden; }
+.jev-meter i { display: block; height: 100%; width: var(--w); border-radius: 2px; background: var(--jev-ok-fg); }
+.jev-meter[data-ad="true"] i { background: var(--jev-ad-fg); }
+
+.jev-rows { display: grid; gap: 4px; }
+.jev-row { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 8px; color: var(--jev-tip-sub); }
+.jev-row i { height: 3px; border-radius: 2px; background: linear-gradient(to right, currentColor var(--w), var(--jev-tip-track) var(--w)); opacity: 0.6; }
+.jev-row b { min-width: 32px; font-weight: 500; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.jev-row.is-top { color: var(--jev-tip-fg); }
+.jev-row.is-top b { font-weight: 650; }
+
+.jev-tip-sub { margin: 10px 0 4px; color: var(--jev-tip-sub); }
+.jev-tip-err { margin-top: 4px; color: var(--jev-warn-fg); word-break: break-all; }
+.jev-tip-foot { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--jev-tip-track); color: var(--jev-tip-sub); }
+
+/* ---------- Right-click check result toast ---------- */
+
+.jev-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 2147483647;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font: 500 13px/20px var(--jev-font);
+  color: var(--jev-tip-fg);
+  background: var(--jev-tip-bg);
+  box-shadow: var(--jev-tip-shadow);
+  transform: translateX(-50%);
+  transition: opacity 200ms ease, transform 200ms var(--jev-ease-out);
+}
+@starting-style {
+  .jev-toast { opacity: 0; transform: translate(-50%, 8px); }
+}
+.jev-toast[data-leaving="true"] { opacity: 0; transform: translate(-50%, 4px); transition-duration: 150ms; }
+.jev-toast::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--jev-ok-fg);
+}
+.jev-toast[data-state="ad"]::before { background: var(--jev-ad-fg); }
+.jev-toast[data-state="error"]::before { background: var(--jev-warn-fg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .jev-badge[data-state="ad"],
+  .jev-badge[data-state="ok"] { animation: none; }
+  .jev-tip,
+  .jev-tip[data-open="true"] { transform: none; }
+  .jev-toast,
+  .jev-toast[data-leaving="true"] { transform: translateX(-50%); }
+  @starting-style { .jev-toast { transform: translateX(-50%); } }
+}
