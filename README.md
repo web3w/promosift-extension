@@ -1,6 +1,10 @@
 # PromoSift extension
 
-A browser extension that detects hard ads, soft ads, and lead-generation content on X (Twitter). Fold or label ads, block content by keyword, and flag AI-generated text. Classification is provided by the PromoSift account service; this repository only contains the extension itself (`manifest.json`, background script, content script, and popup UI), not the account service, website, or admin backend source.
+PromoSift is an open-source Chrome and Edge extension that spots promotions X does not label. It uses the **Jev decision model** through the PromoSift account service to classify visible posts and return promotion categories and probabilities. You choose whether to label or fold a post. The extension also supports keyword blocking and an optional AI-generated text estimate.
+
+**Website:** [promosift.app](https://promosift.app) · **Download and installation:** [promosift.app/#install](https://promosift.app/#install)
+
+This repository contains the extension (`manifest.json`, background script, content script, and popup UI), not the account service, website, or admin backend source.
 
 The extension's UI is available in English and Chinese, following the browser's language setting, and defaults to English.
 
@@ -12,9 +16,15 @@ The extension's UI is available in English and Chinese, following the browser's 
 - Log in with an email code to use your account's credits; new accounts get a one-time free grant, plus a daily manual check-in for more.
 - Right-click menu to classify selected text directly.
 
+## How Jev powers PromoSift
+
+The extension reads posts visible on X and sends the content needed for a decision to the PromoSift account service. For a new semantic classification, the service asks Jev whether the post is likely promotional and which category fits best. Jev returns structured probabilities; the extension shows the result and applies your chosen label or fold setting. A probability is an estimate, not proof that a creator was paid.
+
+X's own ad labels and literal keyword matches can be handled locally. Jev runs through the account service, not inside this extension. The extension requires the service for semantic classification.
+
 ## Dependency on the account service
 
-The extension itself performs no classification. Every check is sent to the account service configured in `config.json`'s `apiBase`. The default points to the official PromoSift service at `https://promosift.app`; if you're running your own backend, either implement a compatible API per the account service's contract, or use the official service.
+The extension itself performs no semantic classification. Those requests go to the account service configured in `config.json`'s `apiBase`. The default points to the official PromoSift service at `https://promosift.app`; if you're running your own backend, either implement a compatible API per the account service's contract, or use the official service.
 
 If you're logged out, out of credits, or can't reach the service, the extension shows a clear status for that; it never fails silently or falls back to any offline classification.
 
