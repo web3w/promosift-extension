@@ -19,7 +19,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => clone(body) });
 
 // Testing only goes through Chrome messages and the context menu entry point; every request is intercepted here to avoid hitting a real service or billing.
-function harness(initial = {}, remote = () => response(serverResult())) {
+function harness(initial = {}, remote = () => response(serverResult()), timers = { setTimeout, clearTimeout }) {
   const storage = clone(initial);
   const calls = [];
   const menus = [];
@@ -73,8 +73,8 @@ function harness(initial = {}, remote = () => response(serverResult())) {
     chrome,
     URL,
     AbortController,
-    setTimeout,
-    clearTimeout,
+    setTimeout: timers.setTimeout,
+    clearTimeout: timers.clearTimeout,
     console,
     async fetch(url, init = {}) {
       if (url === "chrome-extension://adsift-test/config.json") return response({ apiBase: API_BASE });
@@ -180,7 +180,35 @@ test("sufficiently long content requests AI detection", async () => {
   assert.equal(result.aiShort, false);
 });
 
-test("a cached result is re-judged against the latest threshold without re-requesting on a threshold change", async () => {
+test("classification still accepts a response after the server's 15-second model window", async () => {
+  let now = 0;
+  let complete;
+  const pending = new Set();
+  const timers = {
+    setTimeout(fn, delay) {
+      const timer = { fn, at: now + delay };
+      pending.add(timer);
+      return timer;
+    },
+    clearTimeout(timer) { pending.delete(timer); },
+    advance(ms) {
+      now += ms;
+      for (const timer of [...pending]) if (timer.at <= now) { pending.delete(timer); timer.fn(); }
+    }
+  };
+  const app = harness(session(), ({ init }) => new Promise((resolve, reject) => {
+    complete = resolve;
+    init.signal.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
+  }), timers);
+  const result = app.message({ type: "classify", state: { text: "a response arriving after the server model window" } });
+  await tick();
+  assert.equal(typeof complete, "function");
+  timers.advance(16_000);
+  complete(response(serverResult()));
+  assert.equal((await result).ok, true);
+});
+
+test("each classify message reaches the server while the latest threshold controls display", async () => {
   const app = harness(session(), () => response(serverResult(account("alice", 9, 1))));
   const message = { type: "classify", state: { platform: "X", text: "threshold test content" } };
   const first = await app.message(message);
@@ -188,24 +216,26 @@ test("a cached result is re-judged against the latest threshold without re-reque
   app.storage.threshold = 0.3;
   const second = await app.message(message);
   assert.equal(second.result.isAd, true);
-  assert.equal(app.calls.length, 1);
+  assert.equal(app.calls.length, 2);
+  assert.deepEqual(app.storage.stats, { checked: 2, ads: 1 });
 });
 
-test("concurrent and subsequent requests for the same content reuse a single classification and only count it once", async () => {
-  let release;
-  const app = harness(session(), () => new Promise((resolve) => (release = () => resolve(response(serverResult())))));
-  const message = { type: "classify", state: { platform: "X", text: "the same post should not be billed twice" } };
+test("each successful classify message reaches the server and counts once", async () => {
+  const releases = [];
+  let requests = 0;
+  const app = harness(session(), () => ++requests > 2 ? response(serverResult()) : new Promise((resolve) => { releases.push(() => resolve(response(serverResult()))); }));
+  const message = { type: "classify", state: { platform: "X", text: "each explicit query counts even for repeated content" } };
   const first = app.message(message);
   const second = app.message(message);
   await tick();
-  assert.equal(app.calls.length, 1);
-  release();
+  assert.equal(app.calls.length, 2);
+  releases.forEach(release => release());
   const results = await Promise.all([first, second]);
   assert.deepEqual(results[0], results[1]);
   assert.deepEqual(await app.message(message), results[0]);
   await tick();
-  assert.equal(app.calls.length, 1);
-  assert.deepEqual(app.storage.stats, { checked: 1, ads: 0 });
+  assert.equal(app.calls.length, 3);
+  assert.deepEqual(app.storage.stats, { checked: 3, ads: 0 });
 });
 
 test("no classification request is sent while logged out, with an expired session, or with a session from a different API base", async () => {
@@ -335,7 +365,7 @@ test("logging out cancels a verification-code login that has not finished yet", 
   assert.equal(app.storage.auth, null);
 });
 
-test("a disabled account clears its session, and switching accounts clears the existing result cache", async () => {
+test("a disabled account clears its session, and each account's successful requests are counted separately", async () => {
   const disabled = harness(session(), () => response({ ok: false, code: "account_disabled", error: "Account disabled" }, 403));
   assert.equal((await disabled.message({ type: "getAccount" })).code, "account_disabled");
   assert.equal(disabled.storage.auth, null);
@@ -348,7 +378,7 @@ test("a disabled account clears its session, and switching accounts clears the e
   assert.equal((await app.message(message)).ok, true);
   await app.message({ type: "login", email: "bob@example.com", code: "123456" });
   assert.equal((await app.message(message)).ok, true);
-  assert.equal(app.calls.filter(call => call.url.endsWith("/classify")).length, 2);
+  assert.equal(app.calls.filter(call => call.url.endsWith("/classify")).length, 3);
   assert.deepEqual(app.storage.stats, { checked: 1, ads: 0 });
 });
 

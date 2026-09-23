@@ -2,99 +2,204 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="dark light" />
   <title>PromoSift</title>
   <link rel="icon" href="icons/brand.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="popup.css" />
 </head>
-<body>
-  <header class="head">
-    <div class="brand">
-      <img class="logo" src="icons/brand.svg" alt="" width="40" height="40" />
-      <div>
-        <h1>PromoSift</h1>
-        <p class="sub" data-i18n="popupSubtitle"></p>
-      </div>
+<body data-login-state="idle">
+  <header class="pop-head">
+    <div class="mark" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+        <rect x="2.4" y="4" width="15.2" height="2.6" rx="1.3" fill="currentColor" />
+        <rect x="2.4" y="8.7" width="10" height="2.6" rx="1.3" fill="currentColor" />
+        <rect x="2.4" y="13.4" width="13" height="2.6" rx="1.3" fill="currentColor" />
+      </svg>
     </div>
-    <label class="switch" data-i18n-title="popupToggleTitle">
-      <input type="checkbox" id="enabled" />
-      <span class="track"><span class="thumb"></span></span>
-    </label>
+    <div class="brand">
+      <div class="t">PromoSift</div>
+      <div class="s" data-i18n="popupSubtitle"></div>
+    </div>
+    <button type="button" class="sw" id="enabled" role="switch" aria-checked="false" data-i18n-aria-label="popupToggleTitle"><i></i></button>
   </header>
 
-  <!-- The logged-in identity and account credits stay one-to-one; logging in with the same email on another device restores them. -->
-  <section class="account" id="account" data-state="loading" aria-live="polite">
-    <div class="account-row">
-      <span class="plan" id="planName" data-i18n="accountConnecting"></span>
-      <span class="account-meta" id="accountMeta"></span>
+  <div class="paused" id="pausedNote"><i></i><span data-i18n="pausedNote"></span></div>
+
+  <!-- ========== Logged-out: multi-step sign-in flow ========== -->
+  <section id="loginView" hidden>
+    <div class="pop-body">
+      <div class="status" id="authStatus" aria-live="polite">
+        <i></i>
+        <span data-show="idle sending sent error expired" data-i18n="statusSignedOut"></span>
+        <span data-show="done" data-i18n="statusSignedIn"></span>
+      </div>
+
+      <section class="card login-card">
+        <div data-show="idle sending">
+          <h3 class="ct">
+            <span data-i18n="loginStepEmailTitle"></span>
+            <span class="steps" aria-hidden="true"><b class="on"></b><b></b></span>
+          </h3>
+          <p class="cs" data-i18n="loginStepEmailNote"></p>
+          <form class="frow" id="requestCodeForm">
+            <input id="email" class="in" type="email" inputmode="email" autocomplete="email" required maxlength="254" data-i18n-placeholder="loginEmailPlaceholder" data-i18n-aria-label="loginLabel" />
+            <button type="submit" id="requestCode" class="btn btn-brand btn36" data-i18n="loginSendCode"></button>
+          </form>
+          <p class="err" id="emailError" hidden data-i18n="loginInvalidEmail"></p>
+          <div class="reward">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1l1.3 3.2L10.5 5 7.3 6.3 6 9.5 4.7 6.3 1.5 5l3.2-.8z" fill="currentColor" /></svg>
+            <span data-i18n="loginRewardNote"></span>
+          </div>
+        </div>
+
+        <div data-show="sent error expired">
+          <h3 class="ct">
+            <span data-i18n="loginStepCodeTitle"></span>
+            <span class="steps" aria-hidden="true"><b class="on"></b><b class="on"></b></span>
+          </h3>
+          <p class="cs" id="loginStepCodeNote" data-i18n="loginStepCodeNote"></p>
+          <div class="sentline">
+            <span data-i18n="loginSentTo"></span>
+            <b id="sentToEmail"></b>
+            <button type="button" id="changeEmail" data-i18n="loginChangeEmail"></button>
+          </div>
+          <form id="loginForm">
+            <input id="loginCode" class="in otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required data-i18n-placeholder="loginCodePlaceholder" data-i18n-aria-label="loginCodeAriaLabel" />
+            <p class="err" id="codeError" hidden data-i18n="loginInvalidCode"></p>
+            <div class="auxline">
+              <span data-i18n="loginCheckSpam"></span>
+              <button type="button" id="resendCode" disabled></button>
+            </div>
+            <button type="submit" id="login" class="btn btn-brand btn36 btn-block" aria-disabled="true" disabled data-i18n="loginSubmit"></button>
+          </form>
+        </div>
+
+        <div data-show="done">
+          <div class="done-box">
+            <div class="ring" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 12 12" fill="none"><path d="M2.2 6.4l2.3 2.3 5-5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </div>
+            <div class="dt" data-i18n="loginDoneTitle"></div>
+            <div class="ds" id="loginDoneNote"></div>
+          </div>
+          <button type="button" class="btn btn36 btn-block" id="loginDoneClose" data-i18n="loginDoneClose"></button>
+        </div>
+      </section>
+
+      <p class="status" id="loginStatus" data-tone="error" role="status" aria-live="polite" hidden></p>
     </div>
-    <div class="account-note" id="accountEmail"></div>
-    <div class="account-note" id="accountNote"></div>
-    <div class="account-actions" id="accountActions" hidden>
-      <button type="button" class="link" id="refreshAccount" data-i18n="accountRefreshCredits"></button>
-      <button type="button" class="link" id="logout" data-i18n="accountLogout"></button>
-      <button type="button" class="link" id="logoutAll" data-i18n="accountLogoutAll"></button>
-    </div>
-    <div class="daily-check-in" id="checkInRow" hidden>
-      <button type="button" class="link" id="checkIn" disabled data-i18n="checkInQuerying"></button>
-      <span class="account-note" id="checkInNote" data-i18n="checkInNote"></span>
-    </div>
-    <div class="status" id="accountStatus" aria-live="polite"></div>
   </section>
 
-  <section class="field" id="loginField" hidden>
-    <label class="label" for="email" data-i18n="loginLabel"></label>
-    <form class="inline-form" id="requestCodeForm">
-      <input id="email" type="email" autocomplete="email" required maxlength="254" data-i18n-placeholder="loginEmailPlaceholder" />
-      <button type="submit" id="requestCode" data-i18n="loginSendCode"></button>
-    </form>
-    <form class="inline-form login-code" id="loginForm">
-      <input id="loginCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required data-i18n-placeholder="loginCodePlaceholder" data-i18n-aria-label="loginCodeAriaLabel" />
-      <button type="submit" id="login" data-i18n="loginSubmit"></button>
-    </form>
-    <div class="status" id="loginStatus" aria-live="polite"></div>
-    <p class="advanced-note" data-i18n="loginFootnote"></p>
-  </section>
+  <!-- ========== Logged-in: account, stats, settings ========== -->
+  <section id="appView" hidden>
+    <div class="pop-body">
 
-  <section class="stats">
-    <div><b id="checked">0</b><span data-i18n="statsCheckedThisSession"></span></div>
-    <div><b id="ads" class="is-ad">0</b><span data-i18n="statsFlaggedAsAd"></span></div>
-    <div><b id="rate">–</b><span data-i18n="statsAdRate"></span></div>
-  </section>
+      <section class="card" id="account" aria-live="polite">
+        <div class="line">
+          <span class="lbl" data-i18n="accountCreditsLabel"></span>
+          <span class="ok-badge" id="refreshedBadge" hidden>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.2 6.4l2.3 2.3 5-5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            <span data-i18n="accountRefreshed"></span>
+          </span>
+        </div>
+        <div class="quota"><b id="creditsValue">0</b><span id="creditsUnit"></span></div>
+        <div class="bar"><i id="creditsBar" style="width: 0%"></i></div>
+        <div class="line"><span class="mail" id="accountUsedLine"></span><span class="lbl" id="accountEmail"></span></div>
+        <div class="sep"></div>
+        <div class="acts">
+          <button type="button" class="btn btn-brand" id="checkIn" disabled data-i18n="checkInQuerying"></button>
+          <button type="button" class="btn" id="refreshAccount" data-i18n="accountRefreshCredits"></button>
+          <span class="lbl" id="checkInNote" style="margin-left: auto"></span>
+        </div>
+        <p class="status" id="accountStatus" role="status" aria-live="polite" hidden></p>
+      </section>
 
-  <section class="field">
-    <div class="label" data-i18n="displayModeLabel"></div>
-    <div class="seg" data-name="mode" role="radiogroup">
-      <span class="seg-pill" aria-hidden="true"></span>
-      <button role="radio" data-value="label" data-i18n="displayModeLabelOnly"></button>
-      <button role="radio" data-value="fold" data-i18n="displayModeFold"></button>
+      <section>
+        <div class="gsp"><span data-i18n="statsHeading"></span><span data-i18n="statsAutoTally"></span></div>
+        <div class="stats">
+          <div class="tile"><div class="k" data-i18n="statsCheckedThisSession"></div><div class="v" id="checked">0</div></div>
+          <div class="tile"><div class="k" data-i18n="statsFlaggedAsAd"></div><div class="v amber" id="ads">0</div></div>
+          <div class="tile"><div class="k" data-i18n="statsAdRate"></div><div class="v amber" id="rate">–</div><div class="mini"><i id="rateBar" style="width: 0%"></i></div></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="gsp"><span data-i18n="displayModeLabel"></span></div>
+        <div class="seg" role="radiogroup" data-name="mode" data-i18n-aria-label="displayModeLabel">
+          <button type="button" role="radio" data-value="label" aria-checked="true" data-i18n="displayModeLabelOnly"></button>
+          <button type="button" role="radio" data-value="fold" aria-checked="false" data-i18n="displayModeFold"></button>
+        </div>
+        <p class="note" id="modeNote"></p>
+      </section>
+
+      <div class="summary">
+        <span id="settingsSummary"></span>
+        <button type="button" class="btn" id="settingsToggle" data-i18n="settingsExpand"></button>
+      </div>
+
+      <div class="settings-detail" id="settingsDetail" hidden>
+        <section>
+          <div class="gsp"><span data-i18n="aiSectionLabel"></span></div>
+          <div class="grp">
+            <div class="row" id="aiRow">
+              <div class="txt">
+                <div class="t" data-i18n="aiDetectLabel"></div>
+                <div class="d" data-i18n="aiDetectHint"></div>
+              </div>
+              <button type="button" class="sw" id="aiDetect" role="switch" aria-checked="true" data-i18n-aria-label="aiDetectLabel"><i></i></button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="gsp"><span data-i18n="keywordsLabel"></span><span id="kwCount"></span></div>
+          <div class="kw-panel">
+            <div class="kw" id="kwBox">
+              <ul class="chips" id="chips" style="display: contents" data-i18n-aria-label="keywordsAddedAriaLabel"></ul>
+              <input id="kwInput" type="text" maxlength="20" spellcheck="false" data-i18n-placeholder="keywordsPlaceholder" data-i18n-aria-label="keywordsAddAriaLabel" />
+            </div>
+            <div class="presets">
+              <span data-i18n="keywordsPresetsLabel"></span>
+              <button type="button" data-preset="marketingKeywordMarketing"></button>
+              <button type="button" data-preset="marketingKeywordScam"></button>
+              <button type="button" data-preset="marketingKeywordAffiliate"></button>
+              <button type="button" data-preset="marketingKeywordCashback"></button>
+            </div>
+            <div class="row sub" id="smartMatchRow" style="margin: 10px 0 0 -13px">
+              <div class="txt">
+                <div class="t" data-i18n="smartMatchLabel"></div>
+                <div class="d" data-i18n="smartMatchHint"></div>
+              </div>
+              <button type="button" class="sw" id="smartMatch" role="switch" aria-checked="true" data-i18n-aria-label="smartMatchLabel"><i></i></button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="gsp"><span data-i18n="sensitivityLabel"></span></div>
+          <div class="seg" role="radiogroup" data-name="threshold" data-i18n-aria-label="sensitivityLabel">
+            <button type="button" role="radio" data-value="0.8" aria-checked="false" data-i18n="sensitivityLow"></button>
+            <button type="button" role="radio" data-value="0.6" aria-checked="true" data-i18n="sensitivityMid"></button>
+            <button type="button" role="radio" data-value="0.4" aria-checked="false" data-i18n="sensitivityHigh"></button>
+          </div>
+          <p class="note" id="thresholdNote"></p>
+        </section>
+      </div>
+
     </div>
-    <label class="check">
-      <input type="checkbox" id="aiDetect" />
-      <span><span data-i18n="aiDetectLabel"></span><span class="hint" data-i18n="aiDetectHint"></span></span>
-    </label>
-  </section>
 
-  <section class="field">
-    <div class="label"><span data-i18n="keywordsLabel"></span> <span class="hint" data-i18n="keywordsHint"></span></div>
-    <div class="kw-box" id="kwBox">
-      <ul class="chips" id="chips" data-i18n-aria-label="keywordsAddedAriaLabel"></ul>
-      <input id="kwInput" type="text" maxlength="20" spellcheck="false" data-i18n-placeholder="keywordsPlaceholder" data-i18n-aria-label="keywordsAddAriaLabel" />
-    </div>
-    <label class="check">
-      <input type="checkbox" id="smartMatch" />
-      <span><span data-i18n="smartMatchLabel"></span><span class="hint" data-i18n="smartMatchHint"></span></span>
-    </label>
-  </section>
-
-  <section class="field">
-    <div class="label"><span data-i18n="sensitivityLabel"></span> <span class="hint" id="thresholdHint"></span></div>
-    <div class="seg" data-name="threshold" role="radiogroup">
-      <span class="seg-pill" aria-hidden="true"></span>
-      <button role="radio" data-value="0.8" data-i18n="sensitivityLow"></button>
-      <button role="radio" data-value="0.6" data-i18n="sensitivityMid"></button>
-      <button role="radio" data-value="0.4" data-i18n="sensitivityHigh"></button>
-    </div>
+    <footer class="pop-foot">
+      <span class="grp-inline">
+        <button type="button" id="logout" data-i18n="accountLogout"></button>
+        <span class="sep-dot" aria-hidden="true">·</span>
+        <button type="button" class="danger" id="logoutAll" data-i18n="accountLogoutAll"></button>
+      </span>
+      <span class="grp-inline">
+        <a href="https://promosift.app/terms.html" target="_blank" rel="noopener noreferrer" data-i18n="footerTerms"></a>
+        <span class="sep-dot" aria-hidden="true">·</span>
+        <a href="https://promosift.app/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="footerPrivacy"></a>
+      </span>
+    </footer>
   </section>
 
   <script src="popup.js"></script>

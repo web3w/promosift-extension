@@ -1,6 +1,6 @@
 {
   "name": "promosift-extension",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "check": "node --check background.js && node --check popup.js && node --check content.js",
-    "test": "node --test tests/background.test.cjs",
+    "test": "node --test tests/*.test.cjs",
     "configure": "node scripts/configure-extension.mjs",
     "package": "node scripts/package-extension.mjs"
   }

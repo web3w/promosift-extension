@@ -428,7 +428,7 @@
         node.innerHTML = content(res);
         if (res && !res.ok) node.querySelector(".jev-tip-err").textContent = res.error || t("tipUnknownError");
         const r = badge.getBoundingClientRect();
-        const w = 220;
+        const w = 240;
         const left = Math.min(Math.max(8, r.left), innerWidth - w - 8);
         const below = r.bottom + 6 + 170 < innerHeight;
         node.style.left = `${left}px`;
@@ -493,6 +493,7 @@
   // element, so we reuse the remembered result instead of showing "checking" again or re-requesting.
   // Cleared whenever settings change (threshold and keywords affect the result).
   const memory = new Map(); // sig -> { res, literal }
+  const inFlight = new Map(); // sig -> callbacks waiting for the same page request
   const MEMORY_LIMIT = 3000;
   const retries = new Map();
   function remember(sig, entry) {
@@ -525,7 +526,7 @@
     if (el.__jevLiteral.length) applyFold(el, site, null); // Literal keyword matches don't need to wait for the classification result.
     const topics = settings.smartMatch ? (settings.keywords || []).filter((k) => typeof k === "string" && k.trim()) : [];
     const currentVersion = settingsVersion;
-    send({ type: "classify", state, topics }, (res) => {
+    const onResult = (res) => {
       // After logout or switching accounts, discard any in-flight response from the old session, even for the same post.
       if (currentVersion !== settingsVersion || !canCheck()) return;
       if (["auth_required", "account_disabled", "session_changed"].includes(res?.code)) {
@@ -544,6 +545,18 @@
           check(el, site);
         }, RETRY_AFTER_MS);
       }
+    };
+    // 同页相同内容若同时出现，只提交一次请求；各展示位置共用这次返回的结果。
+    const waiting = inFlight.get(sig);
+    if (waiting) {
+      waiting.push(onResult);
+      return;
+    }
+    const callbacks = [onResult];
+    inFlight.set(sig, callbacks);
+    send({ type: "classify", state, topics }, (res) => {
+      if (inFlight.get(sig) === callbacks) inFlight.delete(sig);
+      callbacks.forEach((callback) => callback(res));
     });
   }
 
@@ -600,7 +613,7 @@
             }
             check(el, site);
           } else if (el.__jevBadge && !el.__jevBadge.isConnected) {
-            // The framework's re-render wiped out our badge: re-classify (this hits the cache, no re-billing).
+            // 页面重新渲染时优先复用本页已有结果；没有结果才重新发起一次计费判断。
             sent.delete(el);
             el.__jevBadge = null;
             check(el, site);
@@ -636,6 +649,7 @@
     pending.clear();
     revealed.clear();
     memory.clear();
+    inFlight.clear();
     retries.clear();
     foldedSigs.clear();
     document.querySelectorAll(".jev-badge, .jev-veil").forEach((b) => b.remove());
@@ -651,7 +665,7 @@
         el.__jevVeil = null;
         if (el.__jevSite) {
           io.unobserve(el);
-          if (canCheck()) io.observe(el); // Re-trigger the visibility callback; the result is cached, so this won't re-bill.
+          if (canCheck()) io.observe(el); // 设置变更后重新判断；成功请求按查询次数计费。
         }
       });
   }

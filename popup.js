@@ -9,6 +9,7 @@ function localizeStaticText() {
   document.querySelectorAll("[data-i18n-title]").forEach((el) => el.setAttribute("title", t(el.dataset.i18nTitle)));
 }
 localizeStaticText();
+const MODE_NOTE = { label: t("displayModeHintLabel"), fold: t("displayModeHintFold") };
 const THRESHOLD_HINT = { "0.8": t("sensitivityHintLow"), "0.6": t("sensitivityHintMid"), "0.4": t("sensitivityHintHigh") };
 const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => ({ ok: false, error: t("accountConnectFailed") }));
 const fmt = (n) => Number(n).toLocaleString(chrome.i18n.getUILanguage());
@@ -18,6 +19,43 @@ let checkInAccountId = null;
 let checkInState = null;
 let checkInBusy = false;
 let checkInVersion = 0;
+let currentSettings = null;
+
+function message(el, text = "", tone = "") {
+  el.textContent = text;
+  el.dataset.tone = tone;
+  el.hidden = !text;
+}
+
+// ---------- Power switch + paused state ----------
+
+$("enabled").addEventListener("click", () => {
+  const on = $("enabled").getAttribute("aria-checked") === "true";
+  $("enabled").setAttribute("aria-checked", String(!on));
+  document.body.classList.toggle("off", !on);
+  chrome.storage.local.set({ enabled: !on });
+});
+
+// ---------- Settings summary row ----------
+
+let settingsExpanded = false;
+function renderSettingsSummary() {
+  if (!currentSettings) return;
+  const words = (currentSettings.keywords || []).length;
+  const parts = [
+    currentSettings.aiDetect !== false ? t("settingsSummaryAiOn") : t("settingsSummaryAiOff"),
+    words ? t("settingsSummaryKeywords", String(words)) : t("settingsSummaryKeywordsNone"),
+    t(`settingsSummarySensitivity${currentSettings.threshold === 0.8 ? "Low" : currentSettings.threshold === 0.4 ? "High" : "Mid"}`)
+  ];
+  $("settingsSummary").textContent = parts.join(" · ");
+}
+$("settingsToggle").addEventListener("click", () => {
+  settingsExpanded = !settingsExpanded;
+  $("settingsDetail").hidden = !settingsExpanded;
+  $("settingsToggle").textContent = t(settingsExpanded ? "settingsCollapse" : "settingsExpand");
+});
+
+// ---------- Check-in ----------
 
 function setCheckInAccount(id) {
   if (checkInAccountId === id) return;
@@ -25,7 +63,6 @@ function setCheckInAccount(id) {
   checkInState = null;
   checkInBusy = false;
   checkInVersion++;
-  $("checkInRow").hidden = !id;
   if (id) updateCheckIn();
 }
 async function updateCheckIn(claim = false) {
@@ -41,8 +78,9 @@ async function updateCheckIn(claim = false) {
   if (res?.ok && res.account.id === checkInAccountId) {
     checkInState = res.checkIn;
     $("checkIn").disabled = checkInState.claimed;
-    $("checkIn").textContent = checkInState.claimed ? t("checkInClaimedToday") : t("checkInClaimPrompt");
+    $("checkIn").textContent = checkInState.claimed ? t("checkInClaimedToday") : t("checkInClaimPrompt", fmt(checkInState.amount));
     $("checkInNote").textContent = t("checkInNote");
+    if (claim && checkInState.claimed) showRefreshedBadge();
   } else {
     if (!claim) checkInState = null;
     $("checkIn").disabled = false;
@@ -52,126 +90,276 @@ async function updateCheckIn(claim = false) {
 }
 $("checkIn").addEventListener("click", () => updateCheckIn(Boolean(checkInState)));
 
+let refreshedBadgeTimer;
+function showRefreshedBadge() {
+  $("refreshedBadge").hidden = false;
+  clearTimeout(refreshedBadgeTimer);
+  refreshedBadgeTimer = setTimeout(() => { $("refreshedBadge").hidden = true; }, 3000);
+}
+
+// ---------- Load + account rendering ----------
+
 async function load() {
   const s = await send({ type: "getSettings" });
   const { stats } = await chrome.storage.local.get(["stats"]);
-  $("enabled").checked = s.enabled;
+  currentSettings = s;
+  $("enabled").setAttribute("aria-checked", String(s.enabled));
   document.body.classList.toggle("off", !s.enabled);
   setSeg("mode", s.mode === "blur" ? "fold" : s.mode, false);
   renderChips(s.keywords || []);
-  $("smartMatch").checked = s.smartMatch !== false;
-  $("aiDetect").checked = s.aiDetect !== false;
+  $("aiDetect").setAttribute("aria-checked", String(s.aiDetect !== false));
+  $("smartMatch").setAttribute("aria-checked", String(s.smartMatch !== false));
   setSeg("threshold", String(s.threshold), false);
   renderStats(stats);
+  renderSettingsSummary();
   await syncAccount();
-  if (authenticated) refreshAccount();
+  if (authenticated) refreshAccount(true);
 }
-async function syncAccount() {
+async function syncAccount({ resetLoginState = true } = {}) {
   const current = ++viewVersion;
   const s = await send({ type: "getSettings" });
   const { account } = await chrome.storage.local.get("account");
   if (current !== viewVersion) return;
+  const wasAuthenticated = authenticated;
   authenticated = Boolean(s.authenticated);
+  // Right after a successful login, the "you're signed in" screen (data-login-state="done") must
+  // stay visible until the user dismisses it; only reset to the empty email step when the popup
+  // opened logged-out, or when a session ends (logout / expiry) while it was previously signed in.
+  if (resetLoginState && !(authenticated && !wasAuthenticated)) document.body.dataset.loginState = "idle";
+  $("loginView").hidden = authenticated && document.body.dataset.loginState !== "done";
+  $("appView").hidden = !authenticated;
   if (authenticated && account) renderAccount(account);
-  else renderLoggedOut();
-}
-function renderLoggedOut(message = t("accountLoggedOutNote")) {
-  setCheckInAccount(null);
-  $("account").dataset.state = "free";
-  $("planName").textContent = t("accountLoginCta");
-  $("accountMeta").textContent = "";
-  $("accountEmail").textContent = "";
-  $("accountNote").textContent = message;
-  $("accountActions").hidden = true;
-  $("loginField").hidden = false;
+  else setCheckInAccount(null);
 }
 function renderAccount(account) {
   setCheckInAccount(account.id);
-  $("refreshAccount").hidden = false;
-  $("account").dataset.state = account.credits > 0 ? "free" : "empty";
-  $("planName").textContent = t("accountName");
-  $("accountMeta").textContent = t("accountCreditsRemaining", fmt(account.credits));
+  $("account").dataset.state = account.credits > 0 ? "ok" : "empty";
+  const unit = t("accountCreditsUnit");
+  $("creditsValue").textContent = fmt(account.credits);
+  $("creditsUnit").textContent = unit;
+  const total = account.credits + account.used;
+  $("creditsBar").style.width = `${total > 0 ? Math.min(100, Math.round((account.credits / total) * 100)) : 0}%`;
   $("accountEmail").textContent = account.email;
-  $("accountNote").textContent = t("accountUsedTotal", fmt(account.used)) + " · " + (account.credits > 0 ? t("accountSharedAcrossDevices") : t("accountOutOfCredits"));
-  $("accountActions").hidden = false;
-  $("loginField").hidden = true;
+  $("accountUsedLine").textContent = t("accountUsedTotal", fmt(account.used));
 }
-function renderAccountError(message) {
-  $("accountStatus").dataset.tone = "error";
-  $("accountStatus").textContent = message;
-}
-async function refreshAccount() {
+async function refreshAccount(silent = false) {
   $("refreshAccount").disabled = true;
   const res = await send({ type: "getAccount" });
   $("refreshAccount").disabled = false;
   await syncAccount();
   if (res?.ok) {
-    $("accountStatus").dataset.tone = "ok";
-    $("accountStatus").textContent = t("accountRefreshed");
+    if (!silent) showRefreshedBadge();
     await updateCheckIn();
   } else if (["auth_required", "account_disabled"].includes(res?.code)) {
-    renderLoggedOut(res.error);
-  } else if (res?.code !== "session_changed") renderAccountError(res?.error || t("accountRefreshFailed"));
+    await syncAccount();
+    message($("loginStatus"), res.error, "error");
+  } else if (res?.code !== "session_changed") {
+    message($("accountStatus"), res?.error || t("accountRefreshFailed"), "error");
+  }
 }
-$("refreshAccount").addEventListener("click", refreshAccount);
-let cooldownTimer;
-function cooldown(seconds) {
-  clearInterval(cooldownTimer);
-  const until = Date.now() + seconds * 1000;
-  const update = () => {
-    const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
-    $("requestCode").disabled = left > 0;
-    $("requestCode").textContent = left ? t("loginResendIn", String(left)) : t("loginSendCode");
-    if (!left) clearInterval(cooldownTimer);
-  };
-  update();
-  cooldownTimer = setInterval(update, 1000);
+$("refreshAccount").addEventListener("click", () => refreshAccount());
+
+chrome.storage.onChanged.addListener((c) => {
+  if (c.stats) renderStats(c.stats.newValue);
+  if (c.auth || c.account) syncAccount();
+});
+
+// ---------- Sign-in flow ----------
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const LOGIN_CODE_TTL_MS = 10 * 60 * 1000;
+let loginTimer;
+let resendAvailableAt = 0;
+let codeExpiresAt = 0;
+let sendingCode = false;
+
+function setLoginState(state) {
+  document.body.dataset.loginState = state;
+  $("authStatus").dataset.tone = state === "done" ? "ok" : "";
+  if (state === "idle") {
+    stopLoginTimer();
+    resendAvailableAt = codeExpiresAt = 0;
+    $("emailError").hidden = true;
+    $("email").classList.remove("bad");
+    $("codeError").hidden = true;
+    $("loginCode").classList.remove("bad");
+    $("loginCode").value = "";
+    $("loginCode").disabled = false;
+    lockLoginButton(true);
+  }
+  if (state === "sent") {
+    $("codeError").hidden = true;
+    $("loginCode").classList.remove("bad");
+    $("loginCode").value = "";
+    $("loginCode").disabled = false;
+    $("loginStepCodeNote").textContent = t("loginStepCodeNote");
+    lockLoginButton(true);
+  }
+  if (state === "error") { $("codeError").hidden = false; $("loginCode").classList.add("bad"); }
+  if (state === "done") stopLoginTimer();
 }
+function lockLoginButton(locked) {
+  $("login").disabled = locked;
+  $("login").setAttribute("aria-disabled", String(locked));
+}
+function stopLoginTimer() {
+  clearInterval(loginTimer);
+  loginTimer = null;
+}
+function updateLoginTimer() {
+  const state = document.body.dataset.loginState;
+  if (!["sent", "error", "expired"].includes(state)) return;
+  const now = Date.now();
+  // 用实际时间判断有效期与冷却期，避免侧栏休眠后倒计时停滞；过期码不再允许提交。
+  if (codeExpiresAt && now >= codeExpiresAt && state !== "expired") {
+    document.body.dataset.loginState = "expired";
+    $("loginStepCodeNote").textContent = t("loginCodeExpired");
+    $("loginCode").value = "";
+    $("loginCode").disabled = true;
+    $("codeError").hidden = true;
+    $("loginCode").classList.remove("bad");
+    lockLoginButton(true);
+    message($("loginStatus"), "");
+  }
+  const left = Math.max(0, Math.ceil((resendAvailableAt - now) / 1000));
+  $("resendCode").disabled = sendingCode || left > 0;
+  $("resendCode").textContent = sendingCode ? t("loginSendingCode") : left ? t("loginResendIn", String(left)) : t("loginResendCode");
+  if (!left && document.body.dataset.loginState === "expired") stopLoginTimer();
+}
+function codeSent(retryAfter = 60) {
+  const now = Date.now();
+  codeExpiresAt = now + LOGIN_CODE_TTL_MS;
+  resendAvailableAt = now + retryAfter * 1000;
+  setLoginState("sent");
+  message($("loginStatus"), "");
+  stopLoginTimer();
+  updateLoginTimer();
+  loginTimer = setInterval(updateLoginTimer, 1000);
+}
+
 $("requestCodeForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const value = $("email").value.trim();
+  if (!EMAIL_RE.test(value)) {
+    $("emailError").hidden = false;
+    $("email").classList.add("bad");
+    $("email").focus();
+    return;
+  }
+  $("emailError").hidden = true;
+  $("email").classList.remove("bad");
   $("requestCode").disabled = true;
-  $("loginStatus").dataset.tone = "";
-  $("loginStatus").textContent = t("loginSendingCode");
-  const res = await send({ type: "requestCode", email: $("email").value.trim() });
+  message($("loginStatus"), "");
+  document.body.dataset.loginState = "sending";
+  const res = await send({ type: "requestCode", email: value });
+  $("requestCode").disabled = false;
   if (res?.ok) {
-    cooldown(res.retryAfter || 60);
-    $("loginStatus").dataset.tone = "ok";
-    $("loginStatus").textContent = t("loginCodeSent");
+    $("sentToEmail").textContent = value;
+    codeSent(res.retryAfter);
     $("loginCode").focus();
   } else {
-    $("requestCode").disabled = false;
-    $("loginStatus").dataset.tone = "error";
-    $("loginStatus").textContent = res?.error || t("loginCodeSendFailed");
+    setLoginState("idle");
+    message($("loginStatus"), res?.error || t("loginCodeSendFailed"), "error");
   }
+});
+$("email").addEventListener("input", () => {
+  if (EMAIL_RE.test($("email").value.trim())) {
+    $("emailError").hidden = true;
+    $("email").classList.remove("bad");
+  }
+});
+$("loginCode").addEventListener("input", () => {
+  if (codeExpiresAt && Date.now() >= codeExpiresAt) { updateLoginTimer(); return; }
+  $("loginCode").value = $("loginCode").value.replace(/\D/g, "").slice(0, 6);
+  $("codeError").hidden = true;
+  $("loginCode").classList.remove("bad");
+  lockLoginButton($("loginCode").value.length !== 6);
 });
 $("loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!$("email").reportValidity()) return;
-  $("login").disabled = true;
-  $("loginStatus").dataset.tone = "";
-  $("loginStatus").textContent = t("loginInProgress");
-  const res = await send({ type: "login", email: $("email").value.trim(), code: $("loginCode").value.trim() });
-  $("login").disabled = false;
+  if (codeExpiresAt && Date.now() >= codeExpiresAt) { updateLoginTimer(); return; }
+  if ($("login").disabled) return;
+  lockLoginButton(true);
+  message($("loginStatus"), "");
+  const res = await send({ type: "login", email: $("sentToEmail").textContent, code: $("loginCode").value.trim() });
   if (!res?.ok) {
-    $("loginStatus").dataset.tone = "error";
-    $("loginStatus").textContent = res?.error || t("loginFailed");
+    setLoginState("error");
+    updateLoginTimer();
+    lockLoginButton($("loginCode").value.length !== 6);
+    message($("loginStatus"), res?.error || t("loginFailed"), "error");
     return;
   }
-  $("loginCode").value = "";
-  $("loginStatus").textContent = "";
-  $("accountStatus").textContent = "";
-  await syncAccount();
+  $("loginDoneNote").textContent = t("loginDoneNote", fmt(res.account.credits));
+  setLoginState("done");
+  await syncAccount(); // authenticated flips true; loginView stays visible to show the "done" screen until dismissed.
 });
+$("resendCode").addEventListener("click", async () => {
+  if (!["sent", "error", "expired"].includes(document.body.dataset.loginState)) return;
+  updateLoginTimer();
+  if ($("resendCode").disabled || sendingCode) return;
+  sendingCode = true;
+  updateLoginTimer();
+  const value = $("sentToEmail").textContent;
+  const res = await send({ type: "requestCode", email: value });
+  sendingCode = false;
+  if ($("sentToEmail").textContent !== value || document.body.dataset.loginState === "idle") return;
+  if (res?.ok) codeSent(res.retryAfter);
+  else {
+    updateLoginTimer();
+    message($("loginStatus"), res?.error || t("loginCodeSendFailed"), "error");
+  }
+});
+$("changeEmail").addEventListener("click", () => {
+  setLoginState("idle");
+  $("email").focus();
+});
+$("loginDoneClose").addEventListener("click", () => {
+  document.body.dataset.loginState = "idle";
+  $("loginView").hidden = true;
+  $("appView").hidden = false;
+});
+
+// ---------- Logout + logout-all with inline confirmation ----------
+
 async function logout(all) {
-  $("logout").disabled = $("logoutAll").disabled = true;
+  const footer = document.querySelector(".pop-foot");
+  footer.querySelectorAll("button").forEach((b) => (b.disabled = true));
   const res = await send({ type: "logout", all });
-  $("logout").disabled = $("logoutAll").disabled = false;
-  if (!res?.ok) return renderAccountError(res?.error || t("accountLogoutFailed"));
-  $("accountStatus").textContent = "";
+  if (!res?.ok) {
+    footer.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    message($("accountStatus"), res?.error || t("accountLogoutFailed"), "error");
+    return false;
+  }
   await syncAccount();
+  return true;
 }
-$("logout").addEventListener("click", () => logout(false));
-$("logoutAll").addEventListener("click", () => logout(true));
+
+// The footer container is stable; its contents are swapped in place for the "log out everywhere"
+// confirmation, so every handler here is delegated on the container rather than bound to buttons
+// that get replaced (a direct listener on a replaced button would go stale after the first cancel).
+const footer = document.querySelector(".pop-foot");
+const footerDefault = footer.innerHTML;
+footer.addEventListener("click", async (event) => {
+  const target = event.target.closest("button");
+  if (!target) return;
+  if (target.id === "logout") { await logout(false); return; }
+  if (target.id === "logoutAll") {
+    footer.innerHTML =
+      `<span class="cf">${t("logoutAllConfirmPrompt")}</span>` +
+      `<span class="grp-inline"><button type="button" class="danger" id="logoutAllYes">${t("logoutAllConfirmYes")}</button>` +
+      `<button type="button" id="logoutAllNo">${t("logoutAllConfirmNo")}</button></span>`;
+    return;
+  }
+  if (target.id === "logoutAllNo") { footer.innerHTML = footerDefault; return; }
+  if (target.id === "logoutAllYes") {
+    target.disabled = true;
+    const ok = await logout(true);
+    footer.innerHTML = ok
+      ? `<span class="confirm-bar">${t("logoutAllDone")}</span>`
+      : footerDefault;
+    if (ok) setTimeout(() => { footer.innerHTML = footerDefault; }, 2600);
+  }
+});
 
 // ---------- Blocked keywords ----------
 
@@ -184,7 +372,7 @@ function renderChips(list) {
   ul.textContent = "";
   for (const k of list) {
     const li = document.createElement("li");
-    li.className = "chip";
+    li.className = "tag";
     const text = document.createElement("span");
     text.textContent = k;
     const del = document.createElement("button");
@@ -197,11 +385,18 @@ function renderChips(list) {
   }
   $("kwInput").disabled = list.length >= MAX_KEYWORDS;
   $("kwInput").placeholder = list.length >= MAX_KEYWORDS ? t("keywordsPlaceholderMax", String(MAX_KEYWORDS)) : list.length ? t("keywordsPlaceholderMore") : t("keywordsPlaceholder");
+  $("kwCount").textContent = t("keywordsCount", String(list.length));
+  if (currentSettings) { currentSettings.keywords = list; renderSettingsSummary(); }
 }
 
 function saveKeywords(list) {
   renderChips(list);
   chrome.storage.local.set({ keywords: list });
+}
+function addKeyword(value) {
+  const trimmed = value.trim().slice(0, 20);
+  if (!trimmed || keywords.length >= MAX_KEYWORDS || keywords.some((x) => x.toLowerCase() === trimmed.toLowerCase())) return;
+  saveKeywords([...keywords, trimmed]);
 }
 
 $("kwInput").addEventListener("keydown", (e) => {
@@ -222,21 +417,45 @@ $("kwInput").addEventListener("keydown", (e) => {
 $("kwBox").addEventListener("click", (e) => {
   if (!e.target.closest("button")) $("kwInput").focus();
 });
-$("smartMatch").addEventListener("change", (e) => chrome.storage.local.set({ smartMatch: e.target.checked }));
-$("aiDetect").addEventListener("change", (e) => chrome.storage.local.set({ aiDetect: e.target.checked }));
+document.querySelectorAll("[data-preset]").forEach((button) => {
+  button.textContent = t(button.dataset.preset);
+  button.addEventListener("click", () => addKeyword(t(button.dataset.preset)));
+});
+
+// ---------- Row toggles (AI flag, smart match) ----------
+
+function bindRowToggle(rowId, swId, storageKey) {
+  const row = $(rowId);
+  const sw = $(swId);
+  const toggle = () => {
+    const next = sw.getAttribute("aria-checked") !== "true";
+    sw.setAttribute("aria-checked", String(next));
+    chrome.storage.local.set({ [storageKey]: next });
+    if (currentSettings) { currentSettings[storageKey] = next; renderSettingsSummary(); }
+  };
+  sw.addEventListener("click", (e) => { e.stopPropagation(); toggle(); });
+  row.addEventListener("click", (e) => { if (e.target !== sw) toggle(); });
+}
+bindRowToggle("aiRow", "aiDetect", "aiDetect");
+bindRowToggle("smartMatchRow", "smartMatch", "smartMatch");
 
 // ---------- Stats ----------
 
 function renderStats(stats = { checked: 0, ads: 0 }) {
-  $("checked").textContent = stats.checked;
-  $("ads").textContent = stats.ads;
-  $("rate").textContent = stats.checked ? `${Math.round((stats.ads / stats.checked) * 100)}%` : "–";
+  $("checked").textContent = fmt(stats.checked);
+  $("ads").textContent = fmt(stats.ads);
+  const rate = stats.checked ? Math.round((stats.ads / stats.checked) * 100) : 0;
+  $("rate").textContent = stats.checked ? `${rate}` : "–";
+  if (stats.checked) {
+    const rateEl = $("rate");
+    rateEl.innerHTML = "";
+    rateEl.append(document.createTextNode(String(rate)));
+    const small = document.createElement("small");
+    small.textContent = "%";
+    rateEl.append(small);
+  }
+  $("rateBar").style.width = `${stats.checked ? rate : 0}%`;
 }
-
-chrome.storage.onChanged.addListener((c) => {
-  if (c.stats) renderStats(c.stats.newValue);
-  if (c.auth || c.account) syncAccount();
-});
 
 // ---------- Segmented control ----------
 
@@ -246,10 +465,8 @@ function setSeg(name, value, animate = true) {
   let i = buttons.findIndex((b) => b.dataset.value === value);
   if (i < 0) i = name === "threshold" ? 1 : 0;
   buttons.forEach((b, j) => b.setAttribute("aria-checked", String(j === i)));
-  seg.classList.toggle("no-anim", !animate);
-  seg.style.setProperty("--n", buttons.length);
-  seg.style.setProperty("--i", i);
-  if (name === "threshold") $("thresholdHint").textContent = THRESHOLD_HINT[buttons[i].dataset.value] || "";
+  if (name === "mode") $("modeNote").textContent = MODE_NOTE[buttons[i].dataset.value] || "";
+  if (name === "threshold") $("thresholdNote").textContent = THRESHOLD_HINT[buttons[i].dataset.value] || "";
 }
 
 document.querySelectorAll(".seg").forEach((seg) => {
@@ -259,13 +476,10 @@ document.querySelectorAll(".seg").forEach((seg) => {
     const name = seg.dataset.name;
     const value = btn.dataset.value;
     setSeg(name, value);
-    chrome.storage.local.set({ [name]: name === "threshold" ? Number(value) : value });
+    const stored = name === "threshold" ? Number(value) : value;
+    chrome.storage.local.set({ [name]: stored });
+    if (currentSettings) { currentSettings[name] = stored; renderSettingsSummary(); }
   });
 });
 
-$("enabled").addEventListener("change", (e) => {
-  document.body.classList.toggle("off", !e.target.checked);
-  chrome.storage.local.set({ enabled: e.target.checked });
-});
-
-load().catch(() => renderAccountError(t("accountConnectFailed")));
+load().catch(() => message($("accountStatus"), t("accountConnectFailed"), "error"));

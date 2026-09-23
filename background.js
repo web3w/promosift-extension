@@ -1,7 +1,7 @@
 // PromoSift background: after logging in with an email account, classification uses server-side credits.
 const MAX_CONCURRENT = 4;
-const CACHE_LIMIT = 2000;
-const REQUEST_TIMEOUT_MS = 15_000;
+// 服务端最多等待模型 15 秒，客户端需额外等待数据库提交和网络往返。
+const REQUEST_TIMEOUT_MS = 25_000;
 const AI_MIN_CHARS = 60;
 const DEFAULT_SETTINGS = {
   enabled: true,
@@ -38,8 +38,6 @@ class PromoSiftError extends Error {
     this.code = code;
   }
 }
-const cache = new Map();
-const inflight = new Map();
 let version = 0;
 let identity;
 let quotaExhausted = false;
@@ -57,8 +55,6 @@ function invalidate() {
   identity = undefined;
   quotaExhausted = false;
   savedAccountSequence = 0;
-  cache.clear();
-  inflight.clear();
 }
 async function context() {
   await storageReady;
@@ -192,12 +188,7 @@ async function logout(all = false) {
   await clearSession(ctx);
   return { ok: true };
 }
-// ---------- Classification: in-session cache and concurrency control ----------
-function hash(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36) + ":" + str.length;
-}
+// ---------- Classification: concurrency control ----------
 let active = 0;
 const queue = [];
 function schedule(fn) {
@@ -222,11 +213,8 @@ async function classify(state, topics = []) {
   await assertCurrent(ctx);
   const eligible = aiEligible(state, AI_MIN_CHARS);
   const wantAi = settings.aiDetect !== false && eligible;
-  const key = `${ctx.version}:` + hash(JSON.stringify([state, [...topics].sort(), wantAi]));
-  if (cache.has(key)) return { ...cache.get(key), ctx };
-  if (inflight.has(key)) return inflight.get(key);
   if (quotaExhausted || ctx.account?.credits === 0) throw new PromoSiftError("quota", "Out of detection credits, please refresh your account");
-  const p = schedule(async () => {
+  return schedule(async () => {
     const current = await assertCurrent(ctx);
     if (quotaExhausted || current.account?.credits === 0) throw new PromoSiftError("quota", "Out of detection credits, please refresh your account");
     let data;
@@ -249,14 +237,8 @@ async function classify(state, topics = []) {
       await chrome.storage.local.set({ stats: { checked: stats.checked + 1, ads: stats.ads + Number(result.result.prob >= settings.threshold) } });
     });
     await assertCurrent(ctx);
-    cache.set(key, result);
-    if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
     return { ...result, ctx };
-  }).finally(() => {
-    if (inflight.get(key) === p) inflight.delete(key);
   });
-  inflight.set(key, p);
-  return p;
 }
 const errorResponse = (error) => ({ ok: false, code: error instanceof PromoSiftError ? error.code : "other", error: String(error?.message || error) });
 
