@@ -2,7 +2,20 @@
   // Only run on X's two hostnames, matching the manifest's injection scope.
   if (location.hostname !== "x.com" && location.hostname !== "twitter.com") return;
   const platform = "X";
-  const t = (key, ...substitutions) => chrome.i18n.getMessage(key, substitutions.length ? substitutions : undefined) || key;
+  const t = (key, ...substitutions) => {
+    if (!alive()) {
+      shutdown();
+      return key;
+    }
+    try {
+      return chrome.i18n.getMessage(key, substitutions.length ? substitutions : undefined) || key;
+    } catch (error) {
+      if (alive() && !String(error).includes("Extension context invalidated")) throw error;
+      // 插件重载后旧页面脚本不能再调用扩展 API，停用旧监听，等待刷新后注入新版。
+      shutdown();
+      return key;
+    }
+  };
 
   const SITES = [
     {
@@ -227,8 +240,13 @@
   // Attached on window's capture phase (fires before anything else); X handles navigation on
   // pointerdown/up, so we intercept the whole event chain and only act on the final click.
   function pointTarget(e) {
+    if (dead) return null;
+    if (!alive()) {
+      shutdown();
+      return null;
+    }
     const target = e.target instanceof Element ? e.target : null;
-    if (!target || dead) return null;
+    if (!target) return null;
     const badge = target.closest(".jev-badge");
     if (badge?.__jevItem) return { el: badge.__jevItem, badge: true };
     const el = target.closest(".jev-fold:not(.jev-reveal)");
@@ -466,8 +484,10 @@
   function shutdown() {
     if (dead) return;
     dead = true;
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) removeEventListener(type, onPointCapture, true);
     mo.disconnect();
     io.disconnect();
+    themeObserver.disconnect();
     pending.clear();
     tip.hide();
   }
@@ -477,6 +497,7 @@
     if (!alive()) return shutdown();
     try {
       chrome.runtime.sendMessage(msg, (res) => {
+        if (!alive()) return shutdown();
         if (chrome.runtime.lastError) return;
         cb(res);
       });
@@ -503,6 +524,7 @@
   }
 
   function check(el, site) {
+    if (!alive()) return shutdown();
     if (dead || !canCheck() || quotaHit) return;
     el.__jevKey = site.key?.(el);
     const state = extract(el, site);
@@ -599,6 +621,7 @@
   );
 
   function scan() {
+    if (!alive()) return shutdown();
     for (const site of SITES) {
       document.querySelectorAll(site.item).forEach((el) => {
         if (el.__jevSite) {
@@ -677,7 +700,8 @@
     const [r, g, b] = m.map(Number);
     document.documentElement.dataset.jevTheme = 0.299 * r + 0.587 * g + 0.114 * b < 128 ? "dark" : "light";
   }
-  new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ["style"] });
+  const themeObserver = new MutationObserver(syncTheme);
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ["style"] });
 
   function start() {
     syncTheme();
