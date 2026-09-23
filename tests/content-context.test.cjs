@@ -12,10 +12,12 @@ function loadContent() {
   let stopped = 0;
   let removed = 0;
   let i18nError = null;
+  let lastErrorError = null;
   const observers = [];
   const timers = [];
   const runtime = {
     id: "promosift-test",
+    get lastError() { if (lastErrorError) throw lastErrorError; return null; },
     sendMessage(_message, callback) { pendingMessage = callback; },
     onMessage: { addListener(callback) { listener = callback; } }
   };
@@ -40,7 +42,8 @@ function loadContent() {
     addEventListener() {}, removeEventListener() { removed++; }, setTimeout(callback) { timers.push(callback); }
   }, { filename: "content.js" });
   return { runtime, pendingMessage, message: (value) => listener(value), setI18nError: (error) => { i18nError = error; }, stopped: () => stopped,
-    removed: () => removed, mutate: () => observers[1].callback(), flushTimers: () => { while (timers.length) timers.shift()(); } };
+    setLastErrorError: (error) => { lastErrorError = error; }, removed: () => removed,
+    mutate: () => observers[1].callback(), flushTimers: () => { while (timers.length) timers.shift()(); } };
 }
 
 test("旧页面在插件上下文失效后停止监听，不再抛出 i18n 异常", () => {
@@ -64,5 +67,12 @@ test("旧页面的延迟扫描在插件上下文失效后退出", () => {
   page.mutate();
   page.runtime.id = undefined;
   assert.doesNotThrow(() => page.flushTimers());
+  assert.equal(page.stopped(), 3);
+});
+
+test("消息回调读取 lastError 时遇到上下文失效也会退出", () => {
+  const page = loadContent();
+  page.setLastErrorError(new Error("Extension context invalidated."));
+  assert.doesNotThrow(() => page.pendingMessage({ authenticated: true }));
   assert.equal(page.stopped(), 3);
 });

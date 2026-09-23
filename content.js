@@ -497,9 +497,14 @@
     if (!alive()) return shutdown();
     try {
       chrome.runtime.sendMessage(msg, (res) => {
-        if (!alive()) return shutdown();
-        if (chrome.runtime.lastError) return;
-        cb(res);
+        try {
+          if (!alive()) return shutdown();
+          if (chrome.runtime.lastError) return;
+          cb(res);
+        } catch (error) {
+          if (alive() && !String(error).includes("Extension context invalidated")) throw error;
+          shutdown();
+        }
       });
     } catch {
       shutdown();
