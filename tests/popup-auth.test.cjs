@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const popup = readFileSync(path.join(root, 'popup.js'), 'utf8');
-const flow = popup.split('// ---------- Sign-in flow ----------')[1].split('// ---------- Logout + logout-all with inline confirmation ----------')[0];
+const flow = popup.split('// ---------- Sign-in flow ----------')[1].split('// ---------- Logout ----------')[0];
 const messages = JSON.parse(readFileSync(path.join(root, '_locales/en/messages.json'), 'utf8'));
 
 function page(send) {

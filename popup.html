@@ -20,10 +20,7 @@
       <div class="t">PromoSift</div>
       <div class="s" data-i18n="popupSubtitle"></div>
     </div>
-    <button type="button" class="sw" id="enabled" role="switch" aria-checked="false" data-i18n-aria-label="popupToggleTitle"><i></i></button>
   </header>
-
-  <div class="paused" id="pausedNote"><i></i><span data-i18n="pausedNote"></span></div>
 
   <!-- ========== Logged-out: multi-step sign-in flow ========== -->
   <section id="loginView" hidden>
@@ -108,18 +105,18 @@
         <div class="sep"></div>
         <div class="acts">
           <button type="button" class="btn btn-brand" id="checkIn" disabled data-i18n="checkInQuerying"></button>
-          <button type="button" class="btn" id="refreshAccount" data-i18n="accountRefreshCredits"></button>
+          <a class="btn" href="https://promosift.app/account" target="_blank" rel="noopener noreferrer" data-i18n="accountBuyCredits"></a>
           <span class="lbl" id="checkInNote" style="margin-left: auto"></span>
         </div>
         <p class="status" id="accountStatus" role="status" aria-live="polite" hidden></p>
       </section>
 
-      <section>
-        <div class="gsp"><span data-i18n="statsHeading"></span><span data-i18n="statsAutoTally"></span></div>
+      <section class="session-stats">
+        <div class="gsp"><span data-i18n="statsHeading"></span><span class="live" data-i18n="statsAutoTally"></span></div>
         <div class="stats">
-          <div class="tile"><div class="k" data-i18n="statsCheckedThisSession"></div><div class="v" id="checked">0</div></div>
-          <div class="tile"><div class="k" data-i18n="statsFlaggedAsAd"></div><div class="v amber" id="ads">0</div></div>
-          <div class="tile"><div class="k" data-i18n="statsAdRate"></div><div class="v amber" id="rate">–</div><div class="mini"><i id="rateBar" style="width: 0%"></i></div></div>
+          <div class="tile"><div class="v" id="checked">0</div><div class="k" data-i18n="statsCheckedThisSession"></div></div>
+          <div class="tile"><div class="v amber" id="ads">0</div><div class="k" data-i18n="statsFlaggedAsAd"></div></div>
+          <div class="tile"><div class="v amber" id="rate">–</div><div class="k" data-i18n="statsAdRate"></div><div class="mini"><i id="rateBar" style="width: 0%"></i></div></div>
         </div>
       </section>
 
@@ -160,17 +157,9 @@
             </div>
             <div class="presets">
               <span data-i18n="keywordsPresetsLabel"></span>
-              <button type="button" data-preset="marketingKeywordMarketing"></button>
-              <button type="button" data-preset="marketingKeywordScam"></button>
+              <button type="button" data-preset="crypto"></button>
               <button type="button" data-preset="marketingKeywordAffiliate"></button>
               <button type="button" data-preset="marketingKeywordCashback"></button>
-            </div>
-            <div class="row sub" id="smartMatchRow" style="margin: 10px 0 0 -13px">
-              <div class="txt">
-                <div class="t" data-i18n="smartMatchLabel"></div>
-                <div class="d" data-i18n="smartMatchHint"></div>
-              </div>
-              <button type="button" class="sw" id="smartMatch" role="switch" aria-checked="true" data-i18n-aria-label="smartMatchLabel"><i></i></button>
             </div>
           </div>
         </section>
@@ -191,8 +180,6 @@
     <footer class="pop-foot">
       <span class="grp-inline">
         <button type="button" id="logout" data-i18n="accountLogout"></button>
-        <span class="sep-dot" aria-hidden="true">·</span>
-        <button type="button" class="danger" id="logoutAll" data-i18n="accountLogoutAll"></button>
       </span>
       <span class="grp-inline">
         <a href="https://promosift.app/terms.html" target="_blank" rel="noopener noreferrer" data-i18n="footerTerms"></a>

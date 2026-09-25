@@ -38,8 +38,8 @@
     organic: t("kindOrganic")
   });
 
-  let settings = { enabled: true, mode: "label", keywords: [], smartMatch: true, authenticated: false, keySource: "server" };
-  const canCheck = () => settings.enabled && (settings.authenticated || settings.keySource === "user");
+  let settings = { mode: "label", keywords: [], smartMatch: true, authenticated: false, keySource: "server" };
+  const canCheck = () => settings.authenticated || settings.keySource === "user";
   let settingsVersion = 0;
   // Threshold for meaning-based keyword matches: in practice "just briefly mentioned" scores around 0.7;
   // only 0.8+ reliably means the content is actually about the topic.
@@ -173,6 +173,12 @@
       const kind = r.kind === "organic" ? t("badgeAd") : KIND()[r.kind] || t("badgeAd");
       setBadge(b, "ad", `${kind} ${pct}%`, res.ai);
       el.classList.add("jev-ad");
+      // X 会回收并重建帖子节点；同一内容在当前页面只计一次。
+      const sig = sent.get(el);
+      if (sig && el.isConnected && !foundAds.has(sig)) {
+        foundAds.add(sig);
+        reportCount();
+      }
     } else if (matchedKeywords(el, res).length) {
       setBadge(b, "kw", `${t("badgeBlocked")} · ${matchedKeywords(el, res)[0]}`, res.ai);
     } else {
@@ -391,8 +397,9 @@
   function aiBlock(res) {
     if (typeof res.ai === "number") {
       const p = aiPct(res.ai);
-      const desc = res.ai >= 0.75 ? t("tipAiDescHeavy") : res.ai >= 0.5 ? t("tipAiDescMixed") : res.ai >= 0.25 ? t("tipAiDescLight") : t("tipAiDescHuman");
-      return `<div class="jev-tip-sub">${escapeHtml(t("tipAiRatioLabel"))} · ${escapeHtml(desc)}</div><div class="jev-rows"><div class="jev-row is-top"><span>AI</span><i style="--w:${p}%"></i><b>${escapeHtml(t("badgeAiApprox", String(p)))}</b></div></div>`;
+      // 保留原有的 25%、50%、75% 分界，只在 90% 以上增加“几乎全由 AI 写作”档。
+      const desc = res.ai >= 0.9 ? t("tipAiDescAlmostAll") : res.ai >= 0.75 ? t("tipAiDescHeavy") : res.ai >= 0.5 ? t("tipAiDescMixed") : res.ai >= 0.25 ? t("tipAiDescLight") : t("tipAiDescHuman");
+      return `<div class="jev-tip-sub">${escapeHtml(t("tipAiRatioLabel"))} · ${escapeHtml(desc)}</div><div class="jev-rows"><div class="jev-row is-top jev-ai-row"><i style="--w:${p}%"></i><b>${escapeHtml(t("badgeAiApprox", String(p)))}</b></div></div>`;
     }
     if (res.aiShort) return `<div class="jev-tip-sub">${escapeHtml(t("tipAiShort"))}</div>`;
     return "";
@@ -522,6 +529,15 @@
   const inFlight = new Map(); // sig -> callbacks waiting for the same page request
   const MEMORY_LIMIT = 3000;
   const retries = new Map();
+  const foundAds = new Set();
+  let pageUrl = location.href;
+  const reportCount = () => send({ type: "setBadgeCount", count: foundAds.size }, () => {});
+  function syncPage() {
+    if (location.href === pageUrl) return;
+    pageUrl = location.href;
+    foundAds.clear();
+    reportCount();
+  }
   function remember(sig, entry) {
     memory.delete(sig);
     memory.set(sig, entry);
@@ -531,6 +547,7 @@
   function check(el, site) {
     if (!alive()) return shutdown();
     if (dead || !canCheck() || quotaHit) return;
+    syncPage();
     el.__jevKey = site.key?.(el);
     const state = extract(el, site);
     if (!state) return;
@@ -553,7 +570,10 @@
     if (el.__jevLiteral.length) applyFold(el, site, null); // Literal keyword matches don't need to wait for the classification result.
     const topics = settings.smartMatch ? (settings.keywords || []).filter((k) => typeof k === "string" && k.trim()) : [];
     const currentVersion = settingsVersion;
+    const checkedOn = pageUrl;
     const onResult = (res) => {
+      syncPage();
+      if (checkedOn !== pageUrl) return;
       // After logout or switching accounts, discard any in-flight response from the old session, even for the same post.
       if (currentVersion !== settingsVersion || !canCheck()) return;
       if (["auth_required", "account_disabled", "session_changed"].includes(res?.code)) {
@@ -627,6 +647,7 @@
 
   function scan() {
     if (!alive()) return shutdown();
+    syncPage();
     for (const site of SITES) {
       document.querySelectorAll(site.item).forEach((el) => {
         if (el.__jevSite) {
@@ -673,6 +694,8 @@
 
   function reset() {
     settingsVersion++;
+    foundAds.clear();
+    reportCount();
     tip.hide();
     pending.clear();
     revealed.clear();
@@ -723,6 +746,7 @@
 
   send({ type: "getSettings" }, (s) => {
     if (s) settings = s;
+    reportCount();
     if (canCheck()) startWhenPageReady();
   });
 

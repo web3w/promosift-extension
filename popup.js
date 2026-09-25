@@ -27,15 +27,6 @@ function message(el, text = "", tone = "") {
   el.hidden = !text;
 }
 
-// ---------- Power switch + paused state ----------
-
-$("enabled").addEventListener("click", () => {
-  const on = $("enabled").getAttribute("aria-checked") === "true";
-  $("enabled").setAttribute("aria-checked", String(!on));
-  document.body.classList.toggle("off", !on);
-  chrome.storage.local.set({ enabled: !on });
-});
-
 // ---------- Settings summary row ----------
 
 let settingsExpanded = false;
@@ -103,17 +94,14 @@ async function load() {
   const s = await send({ type: "getSettings" });
   const { stats } = await chrome.storage.local.get(["stats"]);
   currentSettings = s;
-  $("enabled").setAttribute("aria-checked", String(s.enabled));
-  document.body.classList.toggle("off", !s.enabled);
   setSeg("mode", s.mode === "blur" ? "fold" : s.mode, false);
   renderChips(s.keywords || []);
   $("aiDetect").setAttribute("aria-checked", String(s.aiDetect !== false));
-  $("smartMatch").setAttribute("aria-checked", String(s.smartMatch !== false));
   setSeg("threshold", String(s.threshold), false);
   renderStats(stats);
   renderSettingsSummary();
   await syncAccount();
-  if (authenticated) refreshAccount(true);
+  if (authenticated) refreshAccount();
 }
 async function syncAccount({ resetLoginState = true } = {}) {
   const current = ++viewVersion;
@@ -142,13 +130,10 @@ function renderAccount(account) {
   $("accountEmail").textContent = account.email;
   $("accountUsedLine").textContent = t("accountUsedTotal", fmt(account.used));
 }
-async function refreshAccount(silent = false) {
-  $("refreshAccount").disabled = true;
+async function refreshAccount() {
   const res = await send({ type: "getAccount" });
-  $("refreshAccount").disabled = false;
   await syncAccount();
   if (res?.ok) {
-    if (!silent) showRefreshedBadge();
     await updateCheckIn();
   } else if (["auth_required", "account_disabled"].includes(res?.code)) {
     await syncAccount();
@@ -157,8 +142,6 @@ async function refreshAccount(silent = false) {
     message($("accountStatus"), res?.error || t("accountRefreshFailed"), "error");
   }
 }
-$("refreshAccount").addEventListener("click", () => refreshAccount());
-
 chrome.storage.onChanged.addListener((c) => {
   if (c.stats) renderStats(c.stats.newValue);
   if (c.auth || c.account) syncAccount();
@@ -319,46 +302,17 @@ $("loginDoneClose").addEventListener("click", () => {
   $("appView").hidden = false;
 });
 
-// ---------- Logout + logout-all with inline confirmation ----------
+// ---------- Logout ----------
 
-async function logout(all) {
-  const footer = document.querySelector(".pop-foot");
-  footer.querySelectorAll("button").forEach((b) => (b.disabled = true));
-  const res = await send({ type: "logout", all });
+$("logout").addEventListener("click", async () => {
+  $("logout").disabled = true;
+  const res = await send({ type: "logout" });
   if (!res?.ok) {
-    footer.querySelectorAll("button").forEach((b) => (b.disabled = false));
+    $("logout").disabled = false;
     message($("accountStatus"), res?.error || t("accountLogoutFailed"), "error");
-    return false;
-  }
-  await syncAccount();
-  return true;
-}
-
-// The footer container is stable; its contents are swapped in place for the "log out everywhere"
-// confirmation, so every handler here is delegated on the container rather than bound to buttons
-// that get replaced (a direct listener on a replaced button would go stale after the first cancel).
-const footer = document.querySelector(".pop-foot");
-const footerDefault = footer.innerHTML;
-footer.addEventListener("click", async (event) => {
-  const target = event.target.closest("button");
-  if (!target) return;
-  if (target.id === "logout") { await logout(false); return; }
-  if (target.id === "logoutAll") {
-    footer.innerHTML =
-      `<span class="cf">${t("logoutAllConfirmPrompt")}</span>` +
-      `<span class="grp-inline"><button type="button" class="danger" id="logoutAllYes">${t("logoutAllConfirmYes")}</button>` +
-      `<button type="button" id="logoutAllNo">${t("logoutAllConfirmNo")}</button></span>`;
     return;
   }
-  if (target.id === "logoutAllNo") { footer.innerHTML = footerDefault; return; }
-  if (target.id === "logoutAllYes") {
-    target.disabled = true;
-    const ok = await logout(true);
-    footer.innerHTML = ok
-      ? `<span class="confirm-bar">${t("logoutAllDone")}</span>`
-      : footerDefault;
-    if (ok) setTimeout(() => { footer.innerHTML = footerDefault; }, 2600);
-  }
+  await syncAccount();
 });
 
 // ---------- Blocked keywords ----------
@@ -422,7 +376,7 @@ document.querySelectorAll("[data-preset]").forEach((button) => {
   button.addEventListener("click", () => addKeyword(t(button.dataset.preset)));
 });
 
-// ---------- Row toggles (AI flag, smart match) ----------
+// ---------- Row toggle (AI flag) ----------
 
 function bindRowToggle(rowId, swId, storageKey) {
   const row = $(rowId);
@@ -437,7 +391,6 @@ function bindRowToggle(rowId, swId, storageKey) {
   row.addEventListener("click", (e) => { if (e.target !== sw) toggle(); });
 }
 bindRowToggle("aiRow", "aiDetect", "aiDetect");
-bindRowToggle("smartMatchRow", "smartMatch", "smartMatch");
 
 // ---------- Stats ----------
 

@@ -4,7 +4,6 @@ const MAX_CONCURRENT = 4;
 const REQUEST_TIMEOUT_MS = 25_000;
 const AI_MIN_CHARS = 60;
 const DEFAULT_SETTINGS = {
-  enabled: true,
   mode: "label",
   keywords: [],
   smartMatch: true,
@@ -95,6 +94,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     notifySettings().catch(() => {});
   }
 });
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "loading") chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+});
 chrome.runtime.onInstalled.addListener(async () => {
   await storageReady;
   const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
@@ -173,13 +175,13 @@ async function login(email, code) {
   });
   return { ok: true, account: data.account };
 }
-async function logout(all = false) {
+async function logout() {
   ++authAttempt;
   const ctx = await context();
   if (ctx.auth) {
     // If server-side revocation fails, keep the local session and surface the error; never disguise a "local-only clear" as a successful logout.
     try {
-      await api(all ? "/v1/auth/logout-all" : "/v1/auth/logout", { method: "POST", ctx });
+      await api("/v1/auth/logout", { method: "POST", ctx });
     } catch (error) {
       if (!["auth_required", "account_disabled"].includes(error.code)) throw error;
       return { ok: true };
@@ -248,12 +250,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   };
   const trusted = sender.url === chrome.runtime.getURL("popup.html");
+  const xTab = Number.isInteger(sender.tab?.id) && /^https:\/\/(?:x|twitter)\.com\//.test(sender.url || "");
   // Login and logout may only be called from the extension popup; the page's content script has no account-management privileges.
-  if (!["getSettings", "classify"].includes(msg?.type) && !trusted) {
+  if (!["getSettings", "classify", "setBadgeCount"].includes(msg?.type) && !trusted) {
     sendResponse({ ok: false, code: "forbidden", error: "Only the extension popup can perform this action" });
     return false;
   }
   switch (msg?.type) {
+    case "setBadgeCount": {
+      if (!xTab || !Number.isSafeInteger(msg.count) || msg.count < 0) {
+        sendResponse({ ok: false, code: "forbidden" });
+        return false;
+      }
+      // 角标只属于发送消息的 X 标签页；0 时清空，避免切换页面后显示旧数量。
+      return reply(Promise.all([
+        chrome.action.setBadgeText({ tabId: sender.tab.id, text: msg.count ? (msg.count > 999 ? "999+" : String(msg.count)) : "" }),
+        chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: "#c6f979" })
+      ]).then(() => ({ ok: true })));
+    }
     case "getSettings": return reply(getPublicSettings());
     case "classify": return reply(classify(msg.state, msg.topics || []).then(async (r) => {
       const now = await assertCurrent(r.ctx);
@@ -261,7 +275,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }));
     case "requestCode": return reply(api("/v1/auth/request-code", { method: "POST", anonymous: true, body: { email: msg.email } }));
     case "login": return reply(login(msg.email, msg.code));
-    case "logout": return reply(logout(Boolean(msg.all)));
+    case "logout": return reply(logout());
     case "getAccount": return reply(context().then((ctx) => api("/v1/me", { ctx })).then((data) => ({ ok: true, account: data.account })));
     case "getCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx })));
     // Only an explicit claim action from the popup sends a POST; reading account/check-in status never claims credits.

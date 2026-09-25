@@ -24,11 +24,13 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
   const calls = [];
   const menus = [];
   const toasts = [];
+  const badges = [];
   const accessLevels = [];
   let onChanged = () => {};
   let onMessage;
   let onInstalled;
   let onClicked;
+  let onTabUpdated;
   const chrome = {
     runtime: {
       getURL: (name) => `chrome-extension://adsift-test/${name}`,
@@ -62,7 +64,12 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
       create: (menu) => menus.push(clone(menu)),
       onClicked: { addListener: (fn) => (onClicked = fn) }
     },
+    action: {
+      async setBadgeText(details) { badges.push(clone(details)); },
+      async setBadgeBackgroundColor() {}
+    },
     tabs: {
+      onUpdated: { addListener: (fn) => (onTabUpdated = fn) },
       async query() { return []; },
       async sendMessage(tabId, message) {
         toasts.push({ tabId, message: clone(message) });
@@ -88,13 +95,15 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
     calls,
     menus,
     toasts,
+    badges,
     accessLevels,
     set: (value) => chrome.storage.local.set(value),
     install: () => onInstalled(),
     click: (info, tab) => onClicked(info, tab),
-    message: (message, senderUrl = POPUP) => new Promise((resolve, reject) => {
+    tabUpdated: (tabId, changeInfo) => onTabUpdated(tabId, changeInfo),
+    message: (message, senderUrl = POPUP, tabId) => new Promise((resolve, reject) => {
       try {
-        const asyncReply = onMessage(message, { url: senderUrl }, (value) => resolve(clone(value)));
+        const asyncReply = onMessage(message, { url: senderUrl, tab: tabId == null ? undefined : { id: tabId } }, (value) => resolve(clone(value)));
         if (asyncReply !== true && asyncReply !== false) reject(new Error(`Unhandled message: ${message.type}`));
       } catch (error) {
         reject(error);
@@ -109,6 +118,23 @@ test("manifest only injects into X/Twitter and keeps required host permissions",
   assert.equal(manifest.default_locale, "en");
   assert.deepEqual(manifest.content_scripts.flatMap((script) => script.matches).sort(), [...X_MATCHES].sort());
   assert.deepEqual([...manifest.host_permissions].sort(), [...X_MATCHES, `${API_BASE}/*`].sort());
+});
+
+test("toolbar badge counts identified ads per X tab and rejects other senders", async () => {
+  const app = harness(session());
+  assert.equal((await app.message({ type: "setBadgeCount", count: 3 }, "https://x.com/home", 7)).ok, true);
+  assert.equal((await app.message({ type: "setBadgeCount", count: 1 }, "https://twitter.com/home", 8)).ok, true);
+  assert.equal((await app.message({ type: "setBadgeCount", count: 0 }, "https://x.com/home", 7)).ok, true);
+  assert.equal((await app.message({ type: "setBadgeCount", count: 1000 }, "https://x.com/home", 7)).ok, true);
+  app.tabUpdated(8, { status: "loading" });
+  assert.deepEqual(app.badges, [
+    { tabId: 7, text: "3" }, { tabId: 8, text: "1" },
+    { tabId: 7, text: "" }, { tabId: 7, text: "999+" }, { tabId: 8, text: "" }
+  ]);
+  assert.equal((await app.message({ type: "setBadgeCount", count: 2 }, "https://example.com", 7)).ok, false);
+  assert.equal((await app.message({ type: "setBadgeCount", count: -1 }, "https://x.com/home", 7)).ok, false);
+  assert.equal(app.badges.length, 5);
+  assert.equal(app.calls.length, 0);
 });
 
 test("en and zh_CN locales define the same message keys", () => {
@@ -271,19 +297,17 @@ test("logging in with a verification code saves an isolated session, and neither
   }
 });
 
-test("an incorrect verification code does not create a session; logout and logout-all call the matching revoke endpoints", async () => {
+test("an incorrect verification code does not create a session; logout revokes the current session", async () => {
   const invalid = harness({}, () => response({ ok: false, code: "invalid_code", error: "Invalid code" }, 400));
   assert.equal((await invalid.message({ type: "login", email: "alice@example.com", code: "000000" })).code, "invalid_code");
   assert.equal(invalid.storage.auth, undefined);
-  for (const all of [false, true]) {
-    const app = harness(session(), () => response({ ok: true }));
-    assert.equal((await app.message({ type: "logout", all })).ok, true);
-    assert.equal(app.calls[0].url, `${API_BASE}/v1/auth/${all ? "logout-all" : "logout"}`);
-    assert.equal(app.storage.auth, null);
-    assert.equal(app.storage.account, null);
-    assert.deepEqual(app.storage.stats, { checked: 0, ads: 0 });
-    assert.equal((await app.message({ type: "getSettings" })).authenticated, false);
-  }
+  const app = harness(session(), () => response({ ok: true }));
+  assert.equal((await app.message({ type: "logout" })).ok, true);
+  assert.equal(app.calls[0].url, `${API_BASE}/v1/auth/logout`);
+  assert.equal(app.storage.auth, null);
+  assert.equal(app.storage.account, null);
+  assert.deepEqual(app.storage.stats, { checked: 0, ads: 0 });
+  assert.equal((await app.message({ type: "getSettings" })).authenticated, false);
 });
 
 test("a 401 clears the login state without auto-registering; a failed network logout is not disguised as revoked", async () => {
