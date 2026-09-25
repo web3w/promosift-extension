@@ -20,7 +20,7 @@ The extension's UI is available in English and Chinese, following the browser's 
 
 The extension reads posts visible on X and sends the content needed for a decision to the PromoSift account service. For a new semantic classification, the service asks Jev whether the post is likely promotional and which category fits best. Jev returns structured probabilities; the extension shows the result and applies your chosen label or fold setting. A probability is an estimate, not proof that a creator was paid.
 
-X's own ad labels and literal keyword matches can be handled locally. Jev runs through the account service, not inside this extension. The extension requires the service for semantic classification.
+X's own ad labels and literal keyword matches can be handled locally. Jev runs through the account service, not inside this extension. The extension requires the service for semantic classification. Successful results are cached locally for 24 hours (up to 500 entries), separately by account, content, and analysis parameters. Local cache hits do not call the billing API or consume another credit; concurrent identical requests share one request. Only fingerprints and results are cached, not original post text or account balances.
 
 ## Dependency on the account service
 
