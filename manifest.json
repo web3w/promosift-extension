@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "default_locale": "en",
   "description": "__MSG_extDescription__",
   "permissions": [
     "storage",
+    "identity",
     "contextMenus",
     "sidePanel"
   ],
   "host_permissions": [
     "https://promosift.app/*",
+    "https://accounts.google.com/*",
     "https://x.com/*",
     "https://twitter.com/*"
   ],

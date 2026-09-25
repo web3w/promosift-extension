@@ -38,9 +38,11 @@
             <span class="steps" aria-hidden="true"><b class="on"></b><b></b></span>
           </h3>
           <p class="cs" data-i18n="loginStepEmailNote"></p>
+          <button type="button" class="google-login" id="googleLogin" disabled><img src="icons/google-g.png" width="18" height="18" alt="" /><span data-i18n="googleLogin"></span></button>
+          <p class="login-divider" data-i18n="loginOrEmail"></p>
           <form class="frow" id="requestCodeForm">
             <input id="email" class="in" type="email" inputmode="email" autocomplete="email" required maxlength="254" data-i18n-placeholder="loginEmailPlaceholder" data-i18n-aria-label="loginLabel" />
-            <button type="submit" id="requestCode" class="btn btn-brand btn36" data-i18n="loginSendCode"></button>
+            <button type="submit" id="requestCode" disabled class="btn btn-brand btn36" data-i18n="loginSendCode"></button>
           </form>
           <p class="err" id="emailError" hidden data-i18n="loginInvalidEmail"></p>
           <div class="reward">
@@ -81,10 +83,26 @@
           </div>
           <button type="button" class="btn btn36 btn-block" id="loginDoneClose" data-i18n="loginDoneClose"></button>
         </div>
+        <!-- 同意项不随登录步骤隐藏；旧账户登录后仍需明确勾选。 -->
+        <div class="data-consent" id="dataConsentNotice" hidden>
+          <div class="data-consent-row">
+            <input type="checkbox" id="acceptDataConsent" aria-labelledby="dataConsentLabel" />
+            <div><label id="dataConsentLabel" for="acceptDataConsent" data-i18n="dataConsentDescription"></label> <a href="https://promosift.app/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="footerPrivacy"></a></div>
+          </div>
+          <p class="err" id="dataConsentError" role="status" hidden></p>
+        </div>
       </section>
 
       <p class="status" id="loginStatus" data-tone="error" role="status" aria-live="polite" hidden></p>
     </div>
+    <!-- 登录前各步骤均可查看协议，沿用现有页脚样式和翻译。 -->
+    <footer class="pop-foot">
+      <span class="grp-inline">
+        <a href="https://promosift.app/terms.html" target="_blank" rel="noopener noreferrer" data-i18n="footerTerms"></a>
+        <span class="sep-dot" aria-hidden="true">·</span>
+        <a href="https://promosift.app/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="footerPrivacy"></a>
+      </span>
+    </footer>
   </section>
 
   <!-- ========== Logged-in: account, stats, settings ========== -->
@@ -131,7 +149,7 @@
 
       <div class="summary">
         <span id="settingsSummary"></span>
-        <button type="button" class="btn" id="settingsToggle" data-i18n="settingsExpand"></button>
+        <button type="button" class="btn" id="settingsToggle" aria-expanded="false" aria-controls="settingsDetail"><span id="settingsToggleLabel" data-i18n="settingsExpand"></span><svg class="settings-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
       </div>
 
       <div class="settings-detail" id="settingsDetail" hidden>

@@ -150,7 +150,12 @@ button:disabled { cursor: default; }
 /* ---------- Settings summary row (collapsed) ---------- */
 .summary { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: var(--ps-surf-1); border-radius: 12px; }
 .summary span { flex: 1; min-width: 0; font-size: 11.5px; color: var(--ps-t2); }
-.summary .btn { height: 28px; font-size: 11.5px; }
+.summary .btn { min-height: 40px; height: auto; gap: 8px; padding: 0 12px; flex-shrink: 0; border: 1px solid var(--ps-line-2); }
+.summary .btn span { font-size: 12px; color: inherit; }
+.summary:has([aria-expanded="true"]) { scroll-margin-top: 12px; }
+.settings-chevron { flex: none; transition: transform 220ms ease; }
+#settingsToggle[aria-expanded="true"] { color: var(--ps-brand-ink); background: var(--ps-brand-soft); }
+#settingsToggle[aria-expanded="true"] .settings-chevron { transform: rotate(180deg); }
 .settings-detail { display: flex; flex-direction: column; gap: 12px; }
 
 /* ---------- Blocked keywords ---------- */
@@ -173,6 +178,9 @@ button:disabled { cursor: default; }
 
 /* ---------- Footer ---------- */
 .pop-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; border-top: 1px solid var(--ps-line); font-size: 11px; color: var(--ps-t3); }
+/* 登录后页脚固定在视口底部，预留空间避免遮住展开设置的最后一项。 */
+#appView { padding-bottom: 48px; }
+#appView > .pop-foot { position: fixed; bottom: 0; left: 0; width: 360px; max-width: 100%; z-index: 1; background: var(--ps-bg); }
 .pop-foot .grp-inline { display: flex; align-items: center; gap: 5px; }
 .pop-foot button, .pop-foot a { font: inherit; font-size: 11px; background: none; border: 0; color: var(--ps-t3); cursor: pointer; padding: 6px 2px; border-radius: 5px; text-decoration: none; }
 @media (hover: hover) and (pointer: fine) {
@@ -181,6 +189,13 @@ button:disabled { cursor: default; }
 .pop-foot .sep-dot { color: var(--ps-line-2); }
 
 /* ---------- Login flow ---------- */
+/* 简短披露与登录表单合并，链接独立于勾选标签，避免点链接时误授权。 */
+.data-consent { margin-top: 12px; font-size: 11.5px; line-height: 1.5; color: var(--ps-t2); }
+.data-consent-row { display: flex; align-items: flex-start; gap: 8px; }
+.data-consent input { flex: none; width: 14px; height: 14px; margin: 2px 0 0; accent-color: var(--ps-brand); }
+.data-consent label { cursor: pointer; }
+.data-consent a { color: var(--ps-brand-ink); text-underline-offset: 2px; }
+
 .login-card .ct { font-size: 15px; font-weight: 500; margin: 0; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
 .login-card .cs { font-size: 11.5px; color: var(--ps-t3); line-height: 1.5; margin: 5px 0 0; }
 .steps { display: flex; gap: 4px; margin-left: auto; }
@@ -216,5 +231,10 @@ body[data-login-state="expired"] [data-show~="expired"],
 body[data-login-state="done"] [data-show~="done"] { display: block; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sw i, .bar i, .btn { transition: none; }
+  .sw i, .bar i, .btn, .settings-chevron { transition: none; }
 }
+
+/* Google 授权通过浏览器身份窗口完成，不在弹窗内嵌第三方脚本。 */
+.google-login { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; min-height: 40px; margin-top: 12px; border: 1px solid #747775; border-radius: 8px; background: #fff; color: #1f1f1f; font: 500 13px/1.4 Arial, sans-serif; }
+.google-login:disabled { opacity: .6; }
+.login-divider { margin: 10px 0 0; text-align: center; color: var(--ps-t3); font-size: 11px; }

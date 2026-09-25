@@ -12,14 +12,21 @@ const X_MATCHES = ["https://x.com/*", "https://twitter.com/*"];
 const API_BASE = JSON.parse(readFileSync(path.join(root, "config.json"), "utf8")).apiBase;
 const POPUP = "chrome-extension://adsift-test/popup.html";
 const account = (id = "alice", credits = 10, used = 0) => ({ id, email: `${id}@example.com`, role: "user", status: "active", credits, used, createdAt: 1 });
-const session = (id = "alice", credits = 10, used = 0) => ({ auth: { token: `${id}-token`, apiBase: API_BASE, expiresAt: Date.now() + 60_000 }, account: account(id, credits, used) });
+const session = (id = "alice", credits = 10, used = 0) => ({ dataConsent: true, auth: { token: `${id}-token`, apiBase: API_BASE, expiresAt: Date.now() + 60_000 }, account: account(id, credits, used) });
 const serverResult = (user = account("alice", 9, 1)) => ({ ok: true, result: { prob: 0.4, kind: "organic", kindProbs: { organic: 0.6 } }, topics: {}, ai: null, account: user });
 const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+async function waitFor(predicate) {
+  const deadline = Date.now() + 2000;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, "Timed out waiting for async request");
+    await tick();
+  }
+}
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => clone(body) });
 
 // Testing only goes through Chrome messages and the context menu entry point; every request is intercepted here to avoid hitting a real service or billing.
-function harness(initial = {}, remote = () => response(serverResult()), timers = { setTimeout, clearTimeout }) {
+function harness(initial = {}, remote = () => response(serverResult()), timers = { setTimeout, clearTimeout }, identity = {}) {
   const storage = clone(initial);
   const calls = [];
   const menus = [];
@@ -31,7 +38,16 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
   let onInstalled;
   let onClicked;
   let onTabUpdated;
+  const windowListeners = new Set();
+  const windowUpdates = [];
+  const windows = new Map();
   const chrome = {
+    windows: {
+      onCreated: { addListener: fn => windowListeners.add(fn), removeListener: fn => windowListeners.delete(fn) },
+      async get(id) { return windows.get(id); },
+      async update(id, bounds) { windowUpdates.push({ id, ...bounds }); }
+    },
+    identity: { getRedirectURL: () => "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/google", ...identity },
     runtime: {
       getURL: (name) => `chrome-extension://adsift-test/${name}`,
       onMessage: { addListener: (fn) => (onMessage = fn) },
@@ -78,7 +94,7 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
   };
   vm.runInNewContext(source, {
     chrome,
-    URL,
+    URL, URLSearchParams, TextEncoder, btoa, crypto: require("node:crypto").webcrypto,
     AbortController,
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
@@ -91,6 +107,8 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
     }
   }, { filename: "background.js" });
   return {
+    windowListeners, windowUpdates,
+    async createWindow(win) { windows.set(win.id, win); await Promise.all([...windowListeners].map(fn => fn(win))); },
     storage,
     calls,
     menus,
@@ -117,7 +135,7 @@ test("manifest only injects into X/Twitter and keeps required host permissions",
   assert.equal(manifest.action.default_title, "__MSG_extName__");
   assert.equal(manifest.default_locale, "en");
   assert.deepEqual(manifest.content_scripts.flatMap((script) => script.matches).sort(), [...X_MATCHES].sort());
-  assert.deepEqual([...manifest.host_permissions].sort(), [...X_MATCHES, `${API_BASE}/*`].sort());
+  assert.deepEqual([...manifest.host_permissions].sort(), [...X_MATCHES, `${API_BASE}/*`, "https://accounts.google.com/*"].sort());
 });
 
 test("toolbar badge counts identified ads per X tab and rejects other senders", async () => {
@@ -227,14 +245,13 @@ test("classification still accepts a response after the server's 15-second model
     init.signal.addEventListener("abort", () => reject(new Error("request aborted")), { once: true });
   }), timers);
   const result = app.message({ type: "classify", state: { text: "a response arriving after the server model window" } });
-  await tick();
-  assert.equal(typeof complete, "function");
+  await waitFor(() => typeof complete === "function");
   timers.advance(16_000);
   complete(response(serverResult()));
   assert.equal((await result).ok, true);
 });
 
-test("each classify message reaches the server while the latest threshold controls display", async () => {
+test("cached classification uses the latest threshold without another request", async () => {
   const app = harness(session(), () => response(serverResult(account("alice", 9, 1))));
   const message = { type: "classify", state: { platform: "X", text: "threshold test content" } };
   const first = await app.message(message);
@@ -242,26 +259,26 @@ test("each classify message reaches the server while the latest threshold contro
   app.storage.threshold = 0.3;
   const second = await app.message(message);
   assert.equal(second.result.isAd, true);
-  assert.equal(app.calls.length, 2);
-  assert.deepEqual(app.storage.stats, { checked: 2, ads: 1 });
+  assert.equal(app.calls.length, 1);
+  assert.deepEqual(app.storage.stats, { checked: 1, ads: 0 });
 });
 
-test("each successful classify message reaches the server and counts once", async () => {
+test("concurrent and repeated classification shares one billable request", async () => {
   const releases = [];
   let requests = 0;
   const app = harness(session(), () => ++requests > 2 ? response(serverResult()) : new Promise((resolve) => { releases.push(() => resolve(response(serverResult()))); }));
   const message = { type: "classify", state: { platform: "X", text: "each explicit query counts even for repeated content" } };
   const first = app.message(message);
   const second = app.message(message);
-  await tick();
-  assert.equal(app.calls.length, 2);
+  await waitFor(() => releases.length === 1);
+  assert.equal(app.calls.length, 1);
   releases.forEach(release => release());
   const results = await Promise.all([first, second]);
   assert.deepEqual(results[0], results[1]);
   assert.deepEqual(await app.message(message), results[0]);
   await tick();
-  assert.equal(app.calls.length, 3);
-  assert.deepEqual(app.storage.stats, { checked: 3, ads: 0 });
+  assert.equal(app.calls.length, 1);
+  assert.deepEqual(app.storage.stats, { checked: 1, ads: 0 });
 });
 
 test("no classification request is sent while logged out, with an expired session, or with a session from a different API base", async () => {
@@ -275,7 +292,7 @@ test("no classification request is sent while logged out, with an expired sessio
 });
 
 test("logging in with a verification code saves an isolated session, and neither messages nor public settings leak the token", async () => {
-  const app = harness({}, ({ url, body }) => {
+  const app = harness({ dataConsent: true }, ({ url, body }) => {
     if (url.endsWith("/request-code")) {
       assert.deepEqual(body, { email: "alice@example.com" });
       return response({ ok: true, retryAfter: 60 });
@@ -298,7 +315,7 @@ test("logging in with a verification code saves an isolated session, and neither
 });
 
 test("an incorrect verification code does not create a session; logout revokes the current session", async () => {
-  const invalid = harness({}, () => response({ ok: false, code: "invalid_code", error: "Invalid code" }, 400));
+  const invalid = harness({ dataConsent: true }, () => response({ ok: false, code: "invalid_code", error: "Invalid code" }, 400));
   assert.equal((await invalid.message({ type: "login", email: "alice@example.com", code: "000000" })).code, "invalid_code");
   assert.equal(invalid.storage.auth, undefined);
   const app = harness(session(), () => response({ ok: true }));
@@ -343,7 +360,7 @@ test("switching accounts invalidates an old in-flight result without overwriting
   });
   const message = { type: "classify", state: { text: "still the same post after switching accounts" } };
   const old = app.message(message);
-  await tick();
+  await waitFor(() => release);
   await app.message({ type: "login", email: "bob@example.com", code: "123456" });
   release();
   assert.equal((await old).code, "session_changed");
@@ -371,7 +388,7 @@ test("an earlier account response cannot overwrite a more recent refresh result"
     return response({ ok: true, account: account("alice", 50, 1) });
   });
   const old = app.message({ type: "classify", state: { text: "out-of-order responses" } });
-  await tick();
+  await waitFor(() => release);
   await app.message({ type: "getAccount" });
   release();
   assert.equal((await old).ok, true);
@@ -380,7 +397,7 @@ test("an earlier account response cannot overwrite a more recent refresh result"
 
 test("logging out cancels a verification-code login that has not finished yet", async () => {
   let release;
-  const app = harness({}, () => new Promise(resolve => { release = () => resolve(response({ ok: true, token: "cancelled-token", expiresAt: Date.now() + 60_000, account: account() })); }));
+  const app = harness({ dataConsent: true }, () => new Promise(resolve => { release = () => resolve(response({ ok: true, token: "cancelled-token", expiresAt: Date.now() + 60_000, account: account() })); }));
   const old = app.message({ type: "login", email: "alice@example.com", code: "123456" });
   await tick();
   await app.message({ type: "logout" });
@@ -402,7 +419,7 @@ test("a disabled account clears its session, and each account's successful reque
   assert.equal((await app.message(message)).ok, true);
   await app.message({ type: "login", email: "bob@example.com", code: "123456" });
   assert.equal((await app.message(message)).ok, true);
-  assert.equal(app.calls.filter(call => call.url.endsWith("/classify")).length, 3);
+  assert.equal(app.calls.filter(call => call.url.endsWith("/classify")).length, 2);
   assert.deepEqual(app.storage.stats, { checked: 1, ads: 0 });
 });
 
@@ -413,7 +430,7 @@ test("switching accounts cancels requests still waiting in the queue", async () 
     return new Promise(resolve => { releases.push(() => resolve(response(serverResult()))); });
   });
   const results = Array.from({ length: 6 }, (_, index) => app.message({ type: "classify", state: { text: `queued post ${index}` } }));
-  await tick();
+  await waitFor(() => releases.length === 4);
   assert.equal(releases.length, 4);
   await app.message({ type: "login", email: "bob@example.com", code: "123456" });
   releases.forEach(release => release());
@@ -472,4 +489,161 @@ test("a failed check-in never inflates the balance, and switching accounts disca
   release();
   assert.equal((await old).code, "session_changed");
   assert.deepEqual(app.storage.account, account("bob", 30));
+});
+
+// 旧账户没有授权记录时也必须阻止上传；只有插件弹窗能保存明确同意。
+test("classification requires explicit consent even for an existing session", async () => {
+  const initial = session();
+  delete initial.dataConsent;
+  const app = harness(initial);
+  assert.equal((await app.message({ type: "getSettings" })).dataConsent, false);
+  assert.equal((await app.message({ type: "classify", state: { text: "private test" } })).code, "consent_required");
+  assert.equal(app.calls.length, 0);
+  assert.equal((await app.message({ type: "setDataConsent", consent: true }, "https://x.com/home", 7)).code, "forbidden");
+  assert.equal((await app.message({ type: "setDataConsent", consent: true })).ok, true);
+  assert.equal((await app.message({ type: "setDataConsent", consent: "true" })).code, "invalid_consent");
+  assert.equal((await app.message({ type: "getSettings" })).dataConsent, true);
+  assert.equal((await app.message({ type: "classify", state: { text: "test post" } })).ok, true);
+  assert.equal(app.calls.length, 1);
+  assert.equal((await app.message({ type: "setDataConsent", consent: false })).ok, true);
+  assert.equal((await app.message({ type: "classify", state: { text: "after withdrawal" } })).code, "consent_required");
+  assert.equal(app.calls.length, 1);
+});
+
+test("recent login email survives logout and failed attempts, and updates after successful login", async () => {
+  const app = harness({ dataConsent: true }, ({ url, body }) => {
+    if (url.endsWith("/logout")) return response({ ok: true });
+    if (body.code === "000000") return response({ ok: false, code: "invalid_code" }, 400);
+    return response({ ok: true, token: "test-session", expiresAt: Date.now() + 60_000, account: account(body.email.split("@")[0]) });
+  });
+  assert.equal((await app.message({ type: "login", email: "alice@example.com", code: "123456" })).ok, true);
+  assert.equal(app.storage.lastLoginEmail, "alice@example.com");
+  await app.message({ type: "logout" });
+  assert.equal(app.storage.auth, null);
+  assert.equal(app.storage.lastLoginEmail, "alice@example.com");
+  await app.message({ type: "login", email: "bob@example.com", code: "000000" });
+  assert.equal(app.storage.lastLoginEmail, "alice@example.com");
+  await app.message({ type: "login", email: "bob@example.com", code: "123456" });
+  assert.equal(app.storage.lastLoginEmail, "bob@example.com");
+  assert.doesNotMatch(JSON.stringify(await app.message({ type: "getSettings" }, "https://x.com/home")), /lastLoginEmail|bob@example/);
+});
+
+test("Google sign-in exchanges a PKCE ticket, saves the recent email, and preserves data consent", async () => {
+  let challenge;
+  const app = harness({ dataConsent: true }, ({ url, body }) => {
+    if (url.endsWith("/status")) return response({ ok: true, available: true });
+    assert.ok(url.endsWith("/exchange"));
+    assert.equal(body.ticket, "a".repeat(64));
+    assert.equal(require("node:crypto").createHash("sha256").update(body.verifier).digest("base64url"), challenge);
+    return response({ ok: true, token: "google-session", expiresAt: Date.now() + 60_000, account: account() });
+  }, undefined, { async launchWebAuthFlow({ url, interactive }) {
+    assert.equal(interactive, true);
+    const target = new URL(url);
+    assert.equal(target.origin, new URL(API_BASE).origin);
+    challenge = target.searchParams.get("challenge");
+    return target.searchParams.get("redirect_uri") + "?ticket=" + "a".repeat(64);
+  } });
+  assert.equal((await app.message({ type: "loginWithGoogle" }, "https://x.com/home")).code, "forbidden");
+  assert.equal((await app.message({ type: "loginWithGoogle" })).ok, true);
+  assert.equal(app.storage.auth.token, "google-session");
+  assert.equal(app.storage.lastLoginEmail, "alice@example.com");
+  assert.equal(app.storage.dataConsent, true);
+});
+test("Google cancellation and unavailable configuration leave the existing session unchanged", async () => {
+  const app = harness(session(), () => response({ ok: true, available: true }), undefined, { async launchWebAuthFlow() { throw Error("closed"); } });
+  assert.equal((await app.message({ type: "loginWithGoogle" })).code, "google_cancelled");
+  assert.equal(app.storage.auth.token, "alice-token");
+  assert.equal(app.calls.length, 1);
+  const unavailable = harness({ dataConsent: true }, () => response({ ok: true, available: false }));
+  assert.equal((await unavailable.message({ type: "loginWithGoogle" })).code, "google_unavailable");
+  assert.equal(unavailable.storage.auth, undefined);
+  const notDeployed = harness({ dataConsent: true }, () => response({}, 404));
+  assert.equal((await notDeployed.message({ type: "loginWithGoogle" })).code, "google_unavailable");
+  assert.equal(notDeployed.storage.auth, undefined);
+  assert.equal(notDeployed.calls.length, 1);
+});
+test("logout while Google sign-in is open prevents the returned session from being saved", async () => {
+  let complete;
+  const app = harness({ dataConsent: true }, ({ url }) => response(url.endsWith("/status") ? { ok: true, available: true } : { ok: true, token: "stale", expiresAt: Date.now() + 60_000, account: account() }), undefined, { launchWebAuthFlow() { return new Promise(resolve => { complete = resolve; }); } });
+  const pending = app.message({ type: "loginWithGoogle" });
+  while (!complete) await tick();
+  assert.equal((await app.message({ type: "loginWithGoogle" })).code, "google_pending");
+  await app.message({ type: "logout" });
+  complete("https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/google?ticket=" + "a".repeat(64));
+  assert.equal((await pending).code, "session_changed");
+  assert.equal(app.storage.auth, null);
+});
+
+test("Google auth resizes only matching popups and removes its listener on cancellation", async () => {
+  let cancel;
+  const app = harness({ dataConsent: true }, () => response({ ok: true, available: true }), undefined, { launchWebAuthFlow() { return new Promise((resolve, reject) => { cancel = reject; }); } });
+  const pending = app.message({ type: "loginWithGoogle" });
+  while (!cancel) await tick();
+  const win = { id: 9, type: "popup", left: 100, top: 100, width: 800, height: 600, tabs: [{ url: "https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=" + encodeURIComponent(new URL("/auth/google/callback", API_BASE).href) }] };
+  await app.createWindow({ ...win, type: "normal" });
+  await app.createWindow({ ...win, tabs: [{ url: "https://accounts.google.com/?redirect_uri=https://other.example/callback" }] });
+  await app.createWindow({ ...win, tabs: [{}] });
+  assert.equal(app.windowUpdates.length, 0);
+  await app.createWindow(win);
+  assert.deepEqual(app.windowUpdates, [{ id: 9, width: 520, height: 680, left: 240, top: 60 }]);
+  cancel(new Error("closed"));
+  assert.equal((await pending).code, "google_cancelled");
+  assert.equal(app.windowListeners.size, 0);
+});
+
+test("email and Google authentication require saved consent", async () => {
+  for (const dataConsent of [undefined, false]) {
+    const app = harness({ dataConsent });
+    for (const type of ["requestCode", "login", "loginWithGoogle"]) {
+      assert.equal((await app.message({ type, email: "test@example.com", code: "123456" })).code, "consent_required");
+    }
+    assert.equal(app.calls.length, 0);
+  }
+});
+
+test("persistent cache survives worker restart, keeps current balance, and expires", async () => {
+  const message = { type: "classify", state: { text: "persistent cache post" } };
+  const first = harness(session());
+  assert.equal((await first.message(message)).ok, true);
+  const restored = harness({ ...first.storage, account: account("alice", 0, 10), stats: { checked: 0, ads: 0 } });
+  assert.equal((await restored.message(message)).ok, true);
+  assert.equal(restored.calls.length, 0);
+  assert.equal(restored.storage.account.credits, 0);
+  assert.equal(restored.storage.stats.checked, 0);
+  const persisted = JSON.stringify(restored.storage.classificationCache);
+  assert.ok(!persisted.includes("persistent cache post"));
+  assert.ok(!persisted.includes("alice-token"));
+  Object.values(restored.storage.classificationCache)[0].expiresAt = Date.now() - 1;
+  await restored.set({ account: account("alice", 10) });
+  assert.equal((await restored.message(message)).ok, true);
+  assert.equal(restored.calls.length, 1);
+});
+
+test("cache keys include input and AI/topics but ignore presentation and object field order", async () => {
+  const app = harness(session());
+  const text = "A complete sentence about a product and its features. ".repeat(4);
+  const message = { type: "classify", state: { text, author: "alice" }, topics: ["AI", "tools"] };
+  await app.message(message);
+  await app.set({ mode: "fold", threshold: 0.1 });
+  await app.message({ ...message, state: { author: "alice", text }, topics: ["tools", "AI"] });
+  assert.equal(app.calls.length, 1);
+  await app.message({ ...message, state: { text, author: "bob" } });
+  await app.message({ ...message, topics: ["AI"] });
+  await app.set({ aiDetect: false });
+  await app.message(message);
+  assert.equal(app.calls.length, 4);
+});
+
+test("failed requests are not cached and cache remains bounded", async () => {
+  let fail = true;
+  const app = harness(session(), () => fail ? response({ code: "upstream", error: "failed" }, 503) : response(serverResult()));
+  const message = { type: "classify", state: { text: "retry only when explicitly requested" } };
+  assert.equal((await app.message(message)).ok, false);
+  assert.equal(app.storage.classificationCache, undefined);
+  fail = false;
+  app.storage.classificationCache = Object.fromEntries(Array.from({ length: 500 }, (_, i) => [String(i), { expiresAt: Date.now() + 100000, value: {} }]));
+  assert.equal((await app.message(message)).ok, true);
+  assert.equal(app.calls.length, 2);
+  assert.equal(Object.keys(app.storage.classificationCache).length, 500);
+  assert.equal(app.storage.classificationCache['0'], undefined);
 });

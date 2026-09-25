@@ -28,7 +28,7 @@ function page(send) {
   };
   const document = { body: { dataset: { loginState: 'idle' } } };
   const context = vm.createContext({
-    document, $: element, send,
+    document, $: element, send, currentSettings: { dataConsent: true }, googleBusy: false,
     t: (key, value) => messages[key].message.replace('$SECONDS$', value),
     message: (target, value = '', tone = '') => { target.textContent = value; target.dataset.tone = tone; target.hidden = !value; },
     fmt: String, syncAccount: async () => {},
@@ -36,6 +36,7 @@ function page(send) {
     setInterval: (fn) => { timers.set(++nextTimer, fn); return nextTimer; },
     clearInterval: (id) => timers.delete(id)
   });
+  element("acceptDataConsent").checked = true;
   vm.runInContext(flow, context);
   return {
     element, document,

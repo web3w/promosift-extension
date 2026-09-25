@@ -39,7 +39,8 @@
   });
 
   let settings = { mode: "label", keywords: [], smartMatch: true, authenticated: false, keySource: "server" };
-  const canCheck = () => settings.authenticated || settings.keySource === "user";
+  // 登录不等于同意：首次自动识别必须先在插件中明确授权。
+  const canCheck = () => settings.dataConsent === true && (settings.authenticated || settings.keySource === "user");
   let settingsVersion = 0;
   // Threshold for meaning-based keyword matches: in practice "just briefly mentioned" scores around 0.7;
   // only 0.8+ reliably means the content is actually about the topic.
@@ -524,7 +525,7 @@
   // Remember classification results keyed by content signature. X's timeline is a virtual list
   // that recycles and rebuilds elements while scrolling; the same content can reappear on a new
   // element, so we reuse the remembered result instead of showing "checking" again or re-requesting.
-  // Cleared whenever settings change (threshold and keywords affect the result).
+  // Cleared for classification settings changes; display-mode changes reuse these results.
   const memory = new Map(); // sig -> { res, literal }
   const inFlight = new Map(); // sig -> callbacks waiting for the same page request
   const MEMORY_LIMIT = 3000;
@@ -752,7 +753,17 @@
 
   function applySettings(next) {
     if (!next) return;
+    const modeOnly = next.mode !== settings.mode && [...new Set([...Object.keys(settings), ...Object.keys(next)])]
+      .every((key) => key === "mode" || JSON.stringify(settings[key]) === JSON.stringify(next[key]));
     settings = next;
+    if (modeOnly) {
+      // 显示模式不影响识别结果：保留缓存、已提交标记和在途请求，只重绘折叠状态，避免重复计费。
+      revealed.clear();
+      for (const site of SITES) document.querySelectorAll(site.item).forEach((el) => {
+        if (sent.has(el)) applyFold(el, site, el.__jevBadge?.__jevResult);
+      });
+      return;
+    }
     quotaHit = false;
     mo.disconnect();
     reset();

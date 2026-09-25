@@ -4,6 +4,7 @@ const MAX_CONCURRENT = 4;
 const REQUEST_TIMEOUT_MS = 25_000;
 const AI_MIN_CHARS = 60;
 const DEFAULT_SETTINGS = {
+  dataConsent: false,
   mode: "label",
   keywords: [],
   smartMatch: true,
@@ -160,20 +161,78 @@ async function api(path, { method = "GET", body, ctx, anonymous = false } = {}) 
   if (!res.ok) {
     if (ctx && (res.status === 401 || data.code === "account_disabled")) await clearSession(ctx);
     if (res.status === 402) quotaExhausted = true;
-    throw new PromoSiftError(data.code || (res.status >= 500 ? "upstream" : "other"), data.error || `Request failed (${res.status})`);
+    // 旧版线上服务没有 Google 接口时，明确提示尚未启用，避免误报授权失败。
+    const code = path === "/auth/google/status" && res.status === 404 ? "google_unavailable" : data.code || (res.status >= 500 ? "upstream" : "other");
+    throw new PromoSiftError(code, data.error || `Request failed (${res.status})`);
   }
   if (ctx && data.account) await saveAccount(data.account, ctx, sequence);
   return data;
 }
+// 在后台再次检查本地同意，防止直接发送消息绕过登录界面的禁用按钮。
+async function requireLoginConsent() {
+  const { dataConsent } = await chrome.storage.local.get("dataConsent");
+  if (dataConsent !== true) throw new PromoSiftError("consent_required", "Please agree to the Privacy Policy before signing in");
+}
 async function login(email, code) {
+  await requireLoginConsent();
   const attempt = ++authAttempt;
   const base = await loadConfig();
   const data = await api("/v1/auth/verify-code", { method: "POST", anonymous: true, body: { email, code, client: "extension" } });
+  return saveLogin(data, attempt, base);
+}
+async function saveLogin(data, attempt, base) {
   await write(async () => {
     if (attempt !== authAttempt) throw new PromoSiftError("session_changed", "Login was cancelled");
-    await chrome.storage.local.set({ auth: { token: data.token, expiresAt: data.expiresAt, apiBase: base }, account: data.account, stats: { checked: 0, ads: 0 } });
+    await requireLoginConsent();
+    // 仅缓存服务端确认登录成功的邮箱；退出登录保留邮箱，不保存验证码。
+    await chrome.storage.local.set({ auth: { token: data.token, expiresAt: data.expiresAt, apiBase: base }, account: data.account, lastLoginEmail: data.account.email, stats: { checked: 0, ads: 0 } });
   });
   return { ok: true, account: data.account };
+}
+let googleLoginPending = false;
+async function loginWithGoogle() {
+  await requireLoginConsent();
+  if (googleLoginPending) throw new PromoSiftError("google_pending", "Google sign-in is already open");
+  googleLoginPending = true;
+  const attempt = ++authAttempt;
+  try {
+    const base = await loadConfig();
+    const provider = await api("/auth/google/status", { anonymous: true });
+    if (!provider.available) throw new PromoSiftError("google_unavailable", "Google sign-in is temporarily unavailable. Please use email.");
+    const verifier = Array.from(crypto.getRandomValues(new Uint8Array(32)), n => n.toString(16).padStart(2, "0")).join("");
+    const challenge = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const callback = chrome.identity.getRedirectURL("google");
+    const url = new URL(base + "/auth/google/start");
+    url.search = new URLSearchParams({ client: "extension", redirect_uri: callback, challenge }).toString();
+    // identity 不提供尺寸参数；只调整回调指向本站的新 Google 授权弹窗。
+    const resizeAuthWindow = async (created) => {
+      if (created.type !== "popup") return;
+      try {
+        const win = await chrome.windows.get(created.id, { populate: true });
+        if (!googleLoginPending || win.tabs?.length !== 1) return;
+        const page = new URL(win.tabs[0].url || "about:blank");
+        if (page.origin !== "https://accounts.google.com" || page.searchParams.get("redirect_uri") !== new URL("/auth/google/callback", base).href) return;
+        await chrome.windows.update(win.id, { width: 520, height: 680,
+          left: Math.max(0, Math.round(win.left + (win.width - 520) / 2)),
+          top: Math.max(0, Math.round(win.top + (win.height - 680) / 2)) });
+      } catch { /* 窗口已关闭或尺寸调整失败，不影响授权。 */ }
+    };
+    chrome.windows.onCreated.addListener(resizeAuthWindow);
+    let result;
+    try { result = await chrome.identity.launchWebAuthFlow({ url: url.href, interactive: true }); }
+    catch { throw new PromoSiftError("google_cancelled", "Google sign-in was cancelled or could not be opened"); }
+    finally { chrome.windows.onCreated.removeListener(resizeAuthWindow); }
+    const target = new URL(result || callback);
+    if (target.origin + target.pathname !== callback) throw new PromoSiftError("google_failed", "Unexpected Google sign-in response");
+    const error = target.searchParams.get("google_error");
+    if (error) throw new PromoSiftError(error, "Google sign-in could not be completed. Please use email.");
+    if (attempt !== authAttempt) throw new PromoSiftError("session_changed", "Login was cancelled");
+    const ticket = target.searchParams.get("ticket");
+    if (!ticket) throw new PromoSiftError("google_failed", "Missing Google sign-in response");
+    // Google 登录不会自动设置数据处理同意；长期会话只从 HTTPS POST 兑换响应获得。
+    const data = await api("/auth/google/exchange", { method: "POST", anonymous: true, body: { ticket, verifier } });
+    return await saveLogin(data, attempt, base);
+  } finally { googleLoginPending = false; }
 }
 async function logout() {
   ++authAttempt;
@@ -206,6 +265,19 @@ function pump() {
     fn().then(resolve, reject).finally(() => { active--; pump(); });
   }
 }
+const CLASSIFY_CACHE_TTL = 24 * 60 * 60 * 1000;
+const CLASSIFY_CACHE_LIMIT = 500;
+const classificationRequests = new Map();
+// 对象字段顺序不影响查询身份；只持久化摘要键和结果，不存帖子原文或登录令牌。
+function cacheValue(value) {
+  if (Array.isArray(value)) return value.map(cacheValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, cacheValue(value[key])]));
+  return value;
+}
+async function classificationKey(ctx, state, topics, ai) {
+  const input = JSON.stringify(cacheValue([ctx.base, ctx.account?.id || ctx.auth.token, state, topics, ai]));
+  return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input))), n => n.toString(16).padStart(2, "0")).join("");
+}
 async function classify(state, topics = []) {
   state = { ...state, platform: "X" };
   const ctx = await context();
@@ -213,34 +285,65 @@ async function classify(state, topics = []) {
   if (!ctx.auth) throw new PromoSiftError("auth_required", "Please log in to PromoSift first");
   topics = [...new Set(topics.map((t) => String(t).trim()).filter(Boolean))].slice(0, 10);
   await assertCurrent(ctx);
+  // 缺少明确同意时，旧登录状态和直接消息都不能触发内容上传。
+  if (settings.dataConsent !== true) throw new PromoSiftError("consent_required", "Please open PromoSift and agree to data processing before checking posts");
   const eligible = aiEligible(state, AI_MIN_CHARS);
   const wantAi = settings.aiDetect !== false && eligible;
-  if (quotaExhausted || ctx.account?.credits === 0) throw new PromoSiftError("quota", "Out of detection credits, please refresh your account");
-  return schedule(async () => {
-    const current = await assertCurrent(ctx);
-    if (quotaExhausted || current.account?.credits === 0) throw new PromoSiftError("quota", "Out of detection credits, please refresh your account");
-    let data;
-    // Only retry the explicit "request already in progress" case; a network timeout must not auto-resend a request that may already have been billed.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        data = await api("/v1/classify", { method: "POST", body: { state, topics, ai: wantAi }, ctx });
-        break;
-      } catch (error) {
-        if (error.code !== "in_progress" || attempt >= 2) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-        await assertCurrent(ctx);
-      }
-    }
-    await assertCurrent(ctx);
-    const result = { result: data.result, topics: data.topics || {}, ai: data.ai ?? null, aiShort: settings.aiDetect !== false && !eligible };
-    await write(async () => {
+  const key = await classificationKey(ctx, state, [...topics].sort(), wantAi);
+  // 同一会话的相同查询共用一个 Promise，包含缓存读取和排队阶段，避免多标签页同时扣费。
+  const requestKey = `${ctx.identity}:${ctx.version}:${key}`;
+  let request = classificationRequests.get(requestKey);
+  if (!request) {
+    request = (async () => {
+      const { classificationCache = {} } = await chrome.storage.local.get("classificationCache");
       await assertCurrent(ctx);
-      const { stats = { checked: 0, ads: 0 } } = await chrome.storage.local.get("stats");
-      await chrome.storage.local.set({ stats: { checked: stats.checked + 1, ads: stats.ads + Number(result.result.prob >= settings.threshold) } });
-    });
-    await assertCurrent(ctx);
-    return { ...result, ctx };
-  });
+      const cached = classificationCache[key];
+      if (cached?.expiresAt > Date.now()) return cached.value;
+      return schedule(async () => {
+        const current = await assertCurrent(ctx);
+        if (current.settings.dataConsent !== true) throw new PromoSiftError("consent_required", "Please agree to data processing first");
+        if (quotaExhausted || current.account?.credits === 0) throw new PromoSiftError("quota", "Out of detection credits, please refresh your account");
+        let data;
+        // Only retry the explicit "request already in progress" case; a network timeout must not auto-resend a request that may already have been billed.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            data = await api("/v1/classify", { method: "POST", body: { state, topics, ai: wantAi }, ctx });
+            break;
+          } catch (error) {
+            if (error.code !== "in_progress" || attempt >= 2) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            await assertCurrent(ctx);
+          }
+        }
+        await assertCurrent(ctx);
+        const result = { result: data.result, topics: data.topics || {}, ai: data.ai ?? null };
+        await write(async () => {
+          await assertCurrent(ctx);
+          const { stats = { checked: 0, ads: 0 } } = await chrome.storage.local.get("stats");
+          const { classificationCache = {} } = await chrome.storage.local.get("classificationCache");
+          const now = Date.now();
+          const entries = Object.entries(classificationCache).filter(([storedKey, entry]) => storedKey !== key && entry.expiresAt > now);
+          entries.push([key, { expiresAt: now + CLASSIFY_CACHE_TTL, value: result }]);
+          // 只在真实请求成功时更新统计；命中缓存不会覆盖最新余额，也不会再次计数。
+          await chrome.storage.local.set({
+            classificationCache: Object.fromEntries(entries.slice(-CLASSIFY_CACHE_LIMIT)),
+            stats: { checked: stats.checked + 1, ads: stats.ads + Number(result.result.prob >= settings.threshold) }
+          });
+        });
+        await assertCurrent(ctx);
+        return result;
+      });
+    })();
+    classificationRequests.set(requestKey, request);
+  }
+  try {
+    const result = await request;
+    const current = await assertCurrent(ctx);
+    if (current.settings.dataConsent !== true) throw new PromoSiftError("consent_required", "Please agree to data processing first");
+    return { ...result, aiShort: current.settings.aiDetect !== false && !eligible, ctx };
+  } finally {
+    if (classificationRequests.get(requestKey) === request) classificationRequests.delete(requestKey);
+  }
 }
 const errorResponse = (error) => ({ ok: false, code: error instanceof PromoSiftError ? error.code : "other", error: String(error?.message || error) });
 
@@ -268,13 +371,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.action.setBadgeBackgroundColor({ tabId: sender.tab.id, color: "#c6f979" })
       ]).then(() => ({ ok: true })));
     }
+    case "setDataConsent":
+      if (typeof msg.consent !== "boolean") { sendResponse({ ok: false, code: "invalid_consent" }); return false; }
+      return reply(chrome.storage.local.set({ dataConsent: msg.consent }).then(() => ({ ok: true })));
     case "getSettings": return reply(getPublicSettings());
     case "classify": return reply(classify(msg.state, msg.topics || []).then(async (r) => {
       const now = await assertCurrent(r.ctx);
       return { ok: true, result: { ...r.result, isAd: r.result.prob >= now.settings.threshold }, topics: r.topics, ai: r.ai, aiShort: r.aiShort };
     }));
-    case "requestCode": return reply(api("/v1/auth/request-code", { method: "POST", anonymous: true, body: { email: msg.email } }));
+    case "requestCode": return reply(requireLoginConsent().then(() => api("/v1/auth/request-code", { method: "POST", anonymous: true, body: { email: msg.email } })));
     case "login": return reply(login(msg.email, msg.code));
+    case "loginWithGoogle": return reply(loginWithGoogle());
     case "logout": return reply(logout());
     case "getAccount": return reply(context().then((ctx) => api("/v1/me", { ctx })).then((data) => ({ ok: true, account: data.account })));
     case "getCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx })));

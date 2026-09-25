@@ -14,6 +14,7 @@ const THRESHOLD_HINT = { "0.8": t("sensitivityHintLow"), "0.6": t("sensitivityHi
 const send = (msg) => chrome.runtime.sendMessage(msg).catch(() => ({ ok: false, error: t("accountConnectFailed") }));
 const fmt = (n) => Number(n).toLocaleString(chrome.i18n.getUILanguage());
 let authenticated = false;
+let googleBusy = false;
 let viewVersion = 0;
 let checkInAccountId = null;
 let checkInState = null;
@@ -40,10 +41,29 @@ function renderSettingsSummary() {
   ];
   $("settingsSummary").textContent = parts.join(" · ");
 }
-$("settingsToggle").addEventListener("click", () => {
+let settingsAnimation;
+$("settingsToggle").addEventListener("click", async () => {
+  const panel = $("settingsDetail");
+  const height = panel.getBoundingClientRect().height;
+  settingsAnimation?.cancel();
   settingsExpanded = !settingsExpanded;
-  $("settingsDetail").hidden = !settingsExpanded;
-  $("settingsToggle").textContent = t(settingsExpanded ? "settingsCollapse" : "settingsExpand");
+  $("settingsToggle").setAttribute("aria-expanded", String(settingsExpanded));
+  $("settingsToggleLabel").textContent = t(settingsExpanded ? "settingsCollapse" : "settingsExpand");
+  panel.hidden = false;
+  panel.inert = !settingsExpanded;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // 从当前高度展开/收起，连续点击时取消旧动画；收起期间禁止聚焦隐藏控件。
+  panel.style.overflow = "hidden";
+  const animation = settingsAnimation = panel.animate(
+    [{ height: `${height}px` }, { height: `${settingsExpanded ? panel.scrollHeight : 0}px` }],
+    { duration: reducedMotion ? 0 : 240, easing: "ease-out" }
+  );
+  try { await animation.finished; } catch { return; }
+  panel.hidden = !settingsExpanded;
+  panel.style.overflow = "";
+  settingsAnimation = null;
+  // 弹窗高度有限，展开后将设置入口滚到上方，使下方设置进入可见区域。
+  if (settingsExpanded) $("settingsToggle").closest(".summary").scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" });
 });
 
 // ---------- Check-in ----------
@@ -88,11 +108,48 @@ function showRefreshedBadge() {
   refreshedBadgeTimer = setTimeout(() => { $("refreshedBadge").hidden = true; }, 3000);
 }
 
+// 默认不勾选，只有用户主动勾选才保存授权；打开隐私链接不会授权。
+$("acceptDataConsent").addEventListener("change", async () => {
+  const consent = $("acceptDataConsent").checked;
+  $("acceptDataConsent").disabled = true;
+  updateConsentButtons();
+  const res = await send({ type: "setDataConsent", consent });
+  $("acceptDataConsent").disabled = false;
+  if (!res?.ok) {
+    $("acceptDataConsent").checked = !consent;
+    message($("dataConsentError"), t("dataConsentFailed"), "error");
+    updateConsentButtons();
+    return;
+  }
+  message($("dataConsentError"), "");
+  await syncAccount({ resetLoginState: false });
+});
+
+$("googleLogin").addEventListener("click", async () => {
+  if (!hasLoginConsent() || googleBusy || sendingCode) return;
+  googleBusy = true;
+  updateConsentButtons();
+  message($("loginStatus"), "");
+  const res = await send({ type: "loginWithGoogle" });
+  googleBusy = false;
+  updateConsentButtons();
+  if (!res?.ok) {
+    const key = res?.code === "google_cancelled" ? "googleCancelled" : res?.code === "google_unavailable" ? "googleUnavailable" : "googleFailed";
+    message($("loginStatus"), t(key), "error");
+    return;
+  }
+  $("loginDoneNote").textContent = t("loginDoneNote", fmt(res.account.credits));
+  setLoginState("done");
+  await syncAccount();
+});
+
 // ---------- Load + account rendering ----------
 
 async function load() {
   const s = await send({ type: "getSettings" });
-  const { stats } = await chrome.storage.local.get(["stats"]);
+  const { stats, lastLoginEmail, account } = await chrome.storage.local.get(["stats", "lastLoginEmail", "account"]);
+  // 只预填空输入框，避免异步加载覆盖用户已经输入的邮箱。
+  if (!$("email").value) $("email").value = lastLoginEmail || account?.email || "";
   currentSettings = s;
   setSeg("mode", s.mode === "blur" ? "fold" : s.mode, false);
   renderChips(s.keywords || []);
@@ -108,8 +165,14 @@ async function syncAccount({ resetLoginState = true } = {}) {
   const s = await send({ type: "getSettings" });
   const { account } = await chrome.storage.local.get("account");
   if (current !== viewVersion) return;
+  // 隐私勾选只在登录前显示，已保存的同意状态仍用于登录和识别校验。
+  $("dataConsentNotice").hidden = Boolean(s.authenticated);
+  $("acceptDataConsent").checked = s.dataConsent === true;
+  currentSettings = s;
+  updateConsentButtons();
   const wasAuthenticated = authenticated;
   authenticated = Boolean(s.authenticated);
+  $("loginView").querySelector(".login-card").append($("dataConsentNotice"));
   // Right after a successful login, the "you're signed in" screen (data-login-state="done") must
   // stay visible until the user dismisses it; only reset to the empty email step when the popup
   // opened logged-out, or when a session ends (logout / expiry) while it was previously signed in.
@@ -144,7 +207,7 @@ async function refreshAccount() {
 }
 chrome.storage.onChanged.addListener((c) => {
   if (c.stats) renderStats(c.stats.newValue);
-  if (c.auth || c.account) syncAccount();
+  if (c.auth || c.account || c.dataConsent) syncAccount({ resetLoginState: !c.dataConsent });
 });
 
 // ---------- Sign-in flow ----------
@@ -156,6 +219,17 @@ let resendAvailableAt = 0;
 let codeExpiresAt = 0;
 let sendingCode = false;
 
+// 同意必须已成功保存，保存中及未勾选时所有登录入口都保持禁用。
+function hasLoginConsent() {
+  return currentSettings?.dataConsent === true && $("acceptDataConsent").checked && !$("acceptDataConsent").disabled;
+}
+function updateConsentButtons() {
+  const blocked = !hasLoginConsent();
+  $("requestCode").disabled = blocked || sendingCode || googleBusy;
+  $("googleLogin").disabled = blocked || sendingCode || googleBusy;
+  lockLoginButton($("loginCode").value.length !== 6 || document.body.dataset.loginState === "expired");
+  updateLoginTimer();
+}
 function setLoginState(state) {
   document.body.dataset.loginState = state;
   $("authStatus").dataset.tone = state === "done" ? "ok" : "";
@@ -182,6 +256,7 @@ function setLoginState(state) {
   if (state === "done") stopLoginTimer();
 }
 function lockLoginButton(locked) {
+  locked = locked || !hasLoginConsent();
   $("login").disabled = locked;
   $("login").setAttribute("aria-disabled", String(locked));
 }
@@ -205,7 +280,7 @@ function updateLoginTimer() {
     message($("loginStatus"), "");
   }
   const left = Math.max(0, Math.ceil((resendAvailableAt - now) / 1000));
-  $("resendCode").disabled = sendingCode || left > 0;
+  $("resendCode").disabled = !hasLoginConsent() || sendingCode || left > 0;
   $("resendCode").textContent = sendingCode ? t("loginSendingCode") : left ? t("loginResendIn", String(left)) : t("loginResendCode");
   if (!left && document.body.dataset.loginState === "expired") stopLoginTimer();
 }
@@ -222,6 +297,7 @@ function codeSent(retryAfter = 60) {
 
 $("requestCodeForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!hasLoginConsent() || sendingCode || googleBusy) return;
   const value = $("email").value.trim();
   if (!EMAIL_RE.test(value)) {
     $("emailError").hidden = false;
@@ -231,11 +307,13 @@ $("requestCodeForm").addEventListener("submit", async (event) => {
   }
   $("emailError").hidden = true;
   $("email").classList.remove("bad");
-  $("requestCode").disabled = true;
+  sendingCode = true;
+  updateConsentButtons();
   message($("loginStatus"), "");
   document.body.dataset.loginState = "sending";
   const res = await send({ type: "requestCode", email: value });
-  $("requestCode").disabled = false;
+  sendingCode = false;
+  updateConsentButtons();
   if (res?.ok) {
     $("sentToEmail").textContent = value;
     codeSent(res.retryAfter);
@@ -261,7 +339,7 @@ $("loginCode").addEventListener("input", () => {
 $("loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (codeExpiresAt && Date.now() >= codeExpiresAt) { updateLoginTimer(); return; }
-  if ($("login").disabled) return;
+  if (!hasLoginConsent() || $("login").disabled) return;
   lockLoginButton(true);
   message($("loginStatus"), "");
   const res = await send({ type: "login", email: $("sentToEmail").textContent, code: $("loginCode").value.trim() });
