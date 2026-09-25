@@ -248,6 +248,9 @@
 .jev-row b { min-width: 32px; font-weight: 500; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .jev-row.is-top { color: var(--jev-tip-fg); }
 .jev-row.is-top b { font-weight: 650; }
+/* AI 数值与进度条复用徽标的主题色，避免被普通结果行样式覆盖。 */
+.jev-row.jev-ai-row { grid-template-columns: 1fr auto; color: var(--jev-ai-fg); }
+.jev-ai-row i { opacity: 1; }
 
 .jev-tip-sub { margin: 10px 0 4px; color: var(--jev-tip-sub); }
 .jev-tip-err { margin-top: 4px; color: var(--jev-warn-fg); word-break: break-all; }

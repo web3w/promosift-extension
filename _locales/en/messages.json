@@ -144,7 +144,7 @@
 
   "tipChecking": { "message": "Checking with Jev…" },
   "tipAdProbability": { "message": "Promo likelihood" },
-  "tipBlockedKeywords": { "message": "Matched blocked keywords" },
+  "tipBlockedKeywords": { "message": "Matched keywords" },
   "tipLiteralMatch": { "message": "exact" },
   "tipAiShort": { "message": "Content too short to assess AI generation" },
   "tipAiRatioLabel": { "message": "Share of AI-generated text" },
@@ -152,7 +152,7 @@
   "tipAiDescLight": { "message": "may have light AI polish" },
   "tipAiDescMixed": { "message": "notable AI-generated content" },
   "tipAiDescHeavy": { "message": "mostly AI-generated" },
-  "tipReclickToFold": { "message": "Click the badge to fold again" },
+  "tipReclickToFold": { "message": "Click badge to fold" },
   "tipUnknownError": { "message": "Unknown error" },
 
   "toastCheckFailed": { "message": "Check failed: $ERROR$", "placeholders": { "error": { "content": "$1" } } },
