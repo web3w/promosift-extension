@@ -94,7 +94,11 @@ async function updateCheckIn(claim = false) {
     checkInState = res.checkIn;
     $("checkIn").disabled = checkInState.claimed;
     $("checkIn").textContent = checkInState.claimed ? t("checkInClaimedToday") : t("checkInClaimPrompt", fmt(checkInState.amount));
-    $("checkInNote").textContent = t("checkInNote");
+    // 使用服务端下一次重置时刻，按浏览器默认时区显示，并自动处理夏令时。
+    const resetTime = new Intl.DateTimeFormat(chrome.i18n.getUILanguage(), {
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short"
+    }).format(new Date(checkInState.nextAvailableAt));
+    $("checkInNote").textContent = t("checkInNote", resetTime);
     if (claim && checkInState.claimed) showRefreshedBadge();
   } else {
     if (!claim) checkInState = null;

@@ -1,7 +1,7 @@
 {
   "openXTitle": { "message": "Not on x.com" },
-  "openXHint": { "message": "Ad checking runs only on X (Twitter). This tab stays idle — no credits are used." },
-  "openXButton": { "message": "Open X/Twitter.com" },
+  "openXHint": { "message": "Promo checking runs only on X. This tab stays idle — no credits used." },
+  "openXButton": { "message": "Open X" },
   "googleLogin": { "message": "Continue with Google" },
   "loginOrEmail": { "message": "or use email" },
   "googleCancelled": { "message": "Google sign-in was cancelled. You can try again or use email." },
@@ -13,7 +13,7 @@
   "extDescription": { "message": "PromoSift spots likely promotions on X (Twitter). Label or fold posts, filter keywords, and flag possible AI-written text." },
   "contextMenuCheckSelection": { "message": "Check selected text with PromoSift" },
 
-  "popupSubtitle": { "message": "X (Twitter) ad detection, powered by Jev" },
+  "popupSubtitle": { "message": "Spot unlabeled promos on X" },
 
   "accountConnecting": { "message": "Connecting" },
   "accountLoginCta": { "message": "Log in to PromoSift" },
@@ -24,24 +24,24 @@
   "accountCreditsRemaining": { "message": "$COUNT$ left", "placeholders": { "count": { "content": "$1" } } },
   "accountUsedTotal": { "message": "$COUNT$ used · all devices", "placeholders": { "count": { "content": "$1" } } },
   "accountSharedAcrossDevices": { "message": "Credits are shared across all devices" },
-  "accountOutOfCredits": { "message": "Out of credits. Buy more credits in your account" },
+  "accountOutOfCredits": { "message": "Out of credits." },
   "accountOutOfCreditsShort": { "message": "Out of credits." },
   "accountGetMore": { "message": "Get more ↗" },
   "accountBuyCredits": { "message": "Buy credits" },
   "accountLogout": { "message": "Log out" },
   "accountRefreshed": { "message": "Credits refreshed" },
   "accountRefreshFailed": { "message": "Couldn't refresh credits" },
-  "accountLogoutFailed": { "message": "Logout failed, please try again" },
-  "accountConnectFailed": { "message": "Couldn't connect to the extension background, please reopen the popup" },
+  "accountLogoutFailed": { "message": "Couldn't log out. Try again." },
+  "accountConnectFailed": { "message": "Couldn't connect. Reopen the popup." },
 
-  "checkInQuerying": { "message": "Checking in status…" },
+  "checkInQuerying": { "message": "Checking status…" },
   "checkInClaiming": { "message": "Checking in…" },
   "checkInClaimedToday": { "message": "Claimed" },
   "checkInClaimPrompt": { "message": "Check in · +$AMOUNT$", "placeholders": { "amount": { "content": "$1" } } },
   "checkInRetryClaim": { "message": "Retry check-in" },
   "checkInRetryQuery": { "message": "Retry checking status" },
   "checkInNotConfirmed": { "message": "Check-in result not confirmed yet, please retry." },
-  "checkInNote": { "message": "Resets daily at 16:00 UTC" },
+  "checkInNote": { "message": "Resets daily · $TIME$", "placeholders": { "time": { "content": "$1" } } },
 
   "statusSignedOut": { "message": "Not signed in — detection is paused" },
   "statusSignedIn": { "message": "Signed in — detection is on" },
@@ -55,15 +55,15 @@
   "loginCodeAriaLabel": { "message": "Email verification code" },
   "loginSubmit": { "message": "Log in" },
   "loginSendingCode": { "message": "Sending code…" },
-  "loginCodeSent": { "message": "Code sent, please check your inbox (and spam folder)." },
+  "loginCodeSent": { "message": "Code sent. Check inbox and spam." },
   "loginCodeSendFailed": { "message": "Couldn't send the code" },
   "loginInProgress": { "message": "Logging in…" },
   "loginFailed": { "message": "Login failed" },
-  "loginFootnote": { "message": "Get 500 free credits on first login, plus 50 more per day with manual check-in." },
+  "loginFootnote": { "message": "500 free on first login · +50 daily check-in" },
   "loginStepEmailTitle": { "message": "Sign in to PromoSift" },
   "loginStepEmailNote": { "message": "Sign in with Google or email to sync credits across devices." },
   "loginInvalidEmail": { "message": "Enter a valid email address, e.g. you@example.com" },
-  "loginRewardNote": { "message": "Credits: 500 on sign-up · +50 per check-in" },
+  "loginRewardNote": { "message": "500 free on first login · +50 daily check-in" },
   "loginStepCodeTitle": { "message": "Check your inbox" },
   "loginStepCodeNote": { "message": "The 6-digit code expires in 10 minutes." },
   "loginCodeExpired": { "message": "This code has expired. Request a new one." },
@@ -89,7 +89,7 @@
   "displayModeHintFold": { "message": "Promos are folded; tap to expand." },
 
   "settingsExpand": { "message": "Settings" },
-  "settingsCollapse": { "message": "Settings" },
+  "settingsCollapse": { "message": "Hide" },
   "settingsSummaryAiOn": { "message": "AI on" },
   "settingsSummaryAiOff": { "message": "AI off" },
   "settingsSummaryKeywords": { "message": "$COUNT$ keywords", "placeholders": { "count": { "content": "$1" } } },
@@ -100,7 +100,7 @@
 
   "aiSectionLabel": { "message": "Content labels" },
   "aiDetectLabel": { "message": "Flag AI-generated content" },
-  "aiDetectHint": { "message": "Shows the estimated AI-generated share; skipped for very short posts" },
+  "aiDetectHint": { "message": "Shows AI writing %; skipped on very short posts" },
 
   "keywordsLabel": { "message": "Blocked keywords" },
   "keywordsHint": { "message": "Matching posts are folded, including quoted posts" },
@@ -117,7 +117,7 @@
   "keywordsAddAriaLabel": { "message": "Add a blocked keyword" },
 
   "sensitivityLabel": { "message": "Sensitivity" },
-  "sensitivityHintLow": { "message": "Only flag clear-cut ads" },
+  "sensitivityHintLow": { "message": "Only flag clear promos" },
   "sensitivityHintMid": { "message": "Recommended" },
   "sensitivityHintHigh": { "message": "Include soft promos" },
   "sensitivityLow": { "message": "Low" },
@@ -140,7 +140,7 @@
   "badgeNetworkError": { "message": "Can't reach the service" },
   "badgeBlocked": { "message": "Blocked" },
   "badgeNoCredits": { "message": "No credits" },
-  "badgeNoCreditsHint": { "message": "Out of credits. Open PromoSift to get more." },
+  "badgeNoCreditsHint": { "message": "Out of credits. Open PromoSift." },
   "badgeAiApprox": { "message": "AI ~$PERCENT$%", "placeholders": { "percent": { "content": "$1" } } },
 
   "veilFolded": { "message": "Folded" },
@@ -162,6 +162,6 @@
   "tipUnknownError": { "message": "Unknown error" },
 
   "toastCheckFailed": { "message": "Check failed: $ERROR$", "placeholders": { "error": { "content": "$1" } } },
-  "toastLikelyAd": { "message": "Likely $KIND$ · promo likelihood $PERCENT$%", "placeholders": { "kind": { "content": "$1" }, "percent": { "content": "$2" } } },
-  "toastNotAd": { "message": "Not likely a promo · promo likelihood $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } }
+  "toastLikelyAd": { "message": "$KIND$ · $PERCENT$%", "placeholders": { "kind": { "content": "$1" }, "percent": { "content": "$2" } } },
+  "toastNotAd": { "message": "Not a promo · $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } }
 }

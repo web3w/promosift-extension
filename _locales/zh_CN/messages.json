@@ -41,7 +41,7 @@
   "checkInRetryClaim": { "message": "重试签到领取" },
   "checkInRetryQuery": { "message": "重试查询签到" },
   "checkInNotConfirmed": { "message": "签到结果暂未确认，请重试。" },
-  "checkInNote": { "message": "每日 16:00 UTC 刷新" },
+  "checkInNote": { "message": "每日 $TIME$ 刷新", "placeholders": { "time": { "content": "$1" } } },
 
   "statusSignedOut": { "message": "未登录 · 检测已暂停" },
   "statusSignedIn": { "message": "已登录 · 检测运行中" },
