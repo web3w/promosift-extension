@@ -25,6 +25,31 @@ function loadConfig() {
   });
   return configPromise;
 }
+// meta comes straight from page DOM content read by content.js; bound and coerce it defensively
+// before it ever leaves the extension, the same way normalizePost bounds `state` server-side.
+function sanitizeMeta(meta) {
+  if (!meta || typeof meta !== "object") return undefined;
+  const out = {};
+  if (typeof meta.authorId === "string" && meta.authorId.trim()) out.authorId = meta.authorId.trim().slice(0, 100);
+  if (meta.counts && typeof meta.counts === "object") {
+    const counts = {};
+    for (const key of ["replies", "reposts", "likes", "views"]) {
+      const n = meta.counts[key];
+      if (typeof n === "number" && Number.isFinite(n) && n >= 0) counts[key] = Math.round(n);
+    }
+    if (Object.keys(counts).length) out.counts = counts;
+  }
+  const asUrls = (value) => Array.isArray(value) ? value.filter((u) => typeof u === "string" && /^https:\/\//.test(u)).slice(0, 8) : [];
+  if (meta.media && typeof meta.media === "object") {
+    const media = {};
+    const images = asUrls(meta.media.images);
+    const videos = asUrls(meta.media.videos);
+    if (images.length) media.images = images;
+    if (videos.length) media.videos = videos;
+    if (Object.keys(media).length) out.media = media;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 function aiEligible(state, minChars) {
   const text = `${state?.title || ""}${state?.text || ""}`
     .replace(/#[^#\n]{1,40}#|\[[^\]]{1,10}\]|@[\w\u4e00-\u9fa5-]+|https?:\/\/\S+/g, "")
@@ -278,8 +303,9 @@ async function classificationKey(ctx, state, topics, ai) {
   const input = JSON.stringify(cacheValue([ctx.base, ctx.account?.id || ctx.auth.token, state, topics, ai]));
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input))), n => n.toString(16).padStart(2, "0")).join("");
 }
-async function classify(state, topics = []) {
+async function classify(state, topics = [], meta) {
   state = { ...state, platform: "X" };
+  meta = sanitizeMeta(meta);
   const ctx = await context();
   const settings = ctx.settings;
   if (!ctx.auth) throw new PromoSiftError("auth_required", "Please log in to PromoSift first");
@@ -307,7 +333,9 @@ async function classify(state, topics = []) {
         // Only retry the explicit "request already in progress" case; a network timeout must not auto-resend a request that may already have been billed.
         for (let attempt = 0; ; attempt++) {
           try {
-            data = await api("/v1/classify", { method: "POST", body: { state, topics, ai: wantAi }, ctx });
+            // meta rides along only on an actual model request; it never enters classificationKey or
+            // the cache/dedup key above, so it cannot affect billing, caching, or the model's input.
+            data = await api("/v1/classify", { method: "POST", body: { state, topics, ai: wantAi, meta }, ctx });
             break;
           } catch (error) {
             if (error.code !== "in_progress" || attempt >= 2) throw error;
@@ -375,7 +403,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (typeof msg.consent !== "boolean") { sendResponse({ ok: false, code: "invalid_consent" }); return false; }
       return reply(chrome.storage.local.set({ dataConsent: msg.consent }).then(() => ({ ok: true })));
     case "getSettings": return reply(getPublicSettings());
-    case "classify": return reply(classify(msg.state, msg.topics || []).then(async (r) => {
+    case "classify": return reply(classify(msg.state, msg.topics || [], msg.meta).then(async (r) => {
       const now = await assertCurrent(r.ctx);
       return { ok: true, result: { ...r.result, isAd: r.result.prob >= now.settings.threshold }, topics: r.topics, ai: r.ai, aiShort: r.aiShort };
     }));

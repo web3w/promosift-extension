@@ -17,6 +17,19 @@
     }
   };
 
+  // Finds the post author's @handle from a set of candidate profile links: the handle is the only
+  // stable, page-visible unique id for an account (X does not expose the internal numeric user id
+  // anywhere on an individual post card, only on the profile owner's own page header).
+  function firstHandle(candidates) {
+    for (const a of candidates) {
+      const href = a.getAttribute("href") || "";
+      if (/\/status\//.test(href)) continue;
+      const handle = href.replace(/^\//, "").split(/[/?#]/)[0];
+      if (handle && handle !== "i") return handle;
+    }
+    return null;
+  }
+
   const SITES = [
     {
       // The timeline, search, post detail, and replies all use the same article structure.
@@ -27,7 +40,23 @@
       key: (el) => el.querySelector("a:has(> time)")?.getAttribute("href"),
       // When a promoted post has no timestamp link, anchor the badge after the @handle instead.
       anchor: (el) => el.querySelector("a:has(> time)") || el.querySelector('[data-testid="User-Name"] a[tabindex="-1"]'),
-      body: '[data-testid="tweetText"]'
+      body: '[data-testid="tweetText"]',
+      authorId: (el) => firstHandle(el.querySelectorAll('[data-testid="User-Name"] a[href^="/"]'))
+    },
+    {
+      // Fallback for X's logged-out frontend rewrite (TanStack Router + Tailwind, rolling out since
+      // mid-2026), which drops every data-testid attribute the selectors above depend on. Detected by
+      // articles that link to a /status/ permalink but carry no data-testid at all, so this never
+      // matches on the classic markup above and both configs can coexist safely on the same page.
+      item: 'article:not([data-testid]):has(a[href*="/status/"])',
+      author: 'a[href^="/"]:not([href*="/status/"]) > div:not(:has(*))',
+      // Quoted posts render as a nested <article>; its text divs have two article ancestors instead of one.
+      text: 'div[dir="auto"].break-words:not(article article div[dir="auto"].break-words)',
+      repost: 'article article div[dir="auto"].break-words',
+      key: (el) => el.querySelector('a[href*="/status/"]')?.getAttribute("href"),
+      anchor: (el) => el.querySelector('a[href*="/status/"]') || el.querySelector('a[href^="/"]'),
+      body: 'div[dir="auto"].break-words',
+      authorId: (el) => firstHandle([...el.querySelectorAll('a[href^="/"]')].filter((a) => !a.closest("article article")))
     }
   ];
 
@@ -107,6 +136,73 @@
     });
     if (marks.size) state.page_labels = [...marks].join("、");
     return state;
+  }
+
+  // ---------- Supplementary post metadata ----------
+  // Reported alongside the classification request purely for logging/analytics; never included in
+  // `state` above, so it cannot affect the classification signature, the client-side memory cache,
+  // or the prompt sent to the ad-detection model.
+  // Turns "3.3K" / "47K" / "3.2M" into an approximate integer; X only ever shows an abbreviated count.
+  function parseCount(text) {
+    if (!text) return null;
+    const clean = text.trim().replace(/,/g, "");
+    if (/^\d+$/.test(clean)) return Number(clean);
+    const m = clean.match(/^(\d+(?:\.\d+)?)\s*([KMB])$/i);
+    if (!m) return null;
+    const mult = { k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()];
+    return Math.round(Number(m[1]) * mult);
+  }
+
+  // aria-label is the accessibility contract for these buttons and stayed stable across X's 2026
+  // frontend rewrite even though data-testid was dropped; the data-testid names are kept as a
+  // fallback for the classic markup in case a given build renders without a matching aria-label.
+  function engagementCounts(el) {
+    const byLabel = (labels) => {
+      for (const label of labels) {
+        const btn = el.querySelector(`[aria-label="${label}" i]`);
+        const n = btn && parseCount(btn.textContent);
+        if (typeof n === "number") return n;
+      }
+      return null;
+    };
+    const byTestId = (ids) => {
+      for (const id of ids) {
+        const btn = el.querySelector(`[data-testid="${id}"]`);
+        const n = btn && parseCount(btn.textContent);
+        if (typeof n === "number") return n;
+      }
+      return null;
+    };
+    const counts = {
+      replies: byLabel(["Reply"]) ?? byTestId(["reply"]),
+      reposts: byLabel(["Repost", "Retweet"]) ?? byTestId(["retweet"]),
+      likes: byLabel(["Like", "Liked", "Unlike"]) ?? byTestId(["like", "unlike"]),
+      views: byLabel(["View count", "View post analytics"])
+    };
+    return Object.fromEntries(Object.entries(counts).filter(([, v]) => typeof v === "number"));
+  }
+
+  // Only the image/video URLs actually rendered in the post; a real video file URL is never
+  // reachable from the DOM (X streams it through a blob: URL), so the poster/thumbnail is reported
+  // instead alongside the post's own permalink (already sent as part of the classification result).
+  function mediaLinks(el) {
+    const images = [...new Set([...el.querySelectorAll("img")].map((img) => img.src).filter((src) => /pbs\.twimg\.com\/media\//.test(src)))].slice(0, 8);
+    const videos = [...new Set([...el.querySelectorAll("video")].map((v) => v.poster).filter(Boolean))].slice(0, 8);
+    const media = {};
+    if (images.length) media.images = images;
+    if (videos.length) media.videos = videos;
+    return media;
+  }
+
+  function extractMeta(el, site) {
+    const meta = {};
+    const authorId = site.authorId?.(el);
+    if (authorId) meta.authorId = authorId;
+    const counts = engagementCounts(el);
+    if (Object.keys(counts).length) meta.counts = counts;
+    const media = mediaLinks(el);
+    if (media.images || media.videos) meta.media = media;
+    return Object.keys(meta).length ? meta : undefined;
   }
 
   // ---------- Badge ----------
@@ -608,7 +704,10 @@
     }
     const callbacks = [onResult];
     inFlight.set(sig, callbacks);
-    send({ type: "classify", state, topics }, (res) => {
+    // meta (author id / engagement counts / media links) rides along on the same request purely for
+    // reporting; it's read fresh at send time (not part of `sig`) so it never affects the cache key,
+    // memoized result, or dedup key above, and is never forwarded to the classification model.
+    send({ type: "classify", state, topics, meta: extractMeta(el, site) }, (res) => {
       if (inFlight.get(sig) === callbacks) inFlight.delete(sig);
       callbacks.forEach((callback) => callback(res));
     });

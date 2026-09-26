@@ -634,6 +634,21 @@ test("cache keys include input and AI/topics but ignore presentation and object 
   assert.equal(app.calls.length, 4);
 });
 
+test("meta rides along on the classify request but never affects the cache key or billing", async () => {
+  const app = harness(session());
+  const message = { type: "classify", state: { text: "A post with engagement metadata attached for reporting only." } };
+  await app.message({ ...message, meta: { authorId: "alice", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } } });
+  // Same content, different meta (or none): still a single cached request, no extra billing.
+  await app.message({ ...message, meta: { authorId: "bob" } });
+  await app.message(message);
+  assert.equal(app.calls.length, 1);
+  assert.deepEqual(app.calls[0].body.meta, { authorId: "alice", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } });
+  // Malformed meta (wrong types, non-https urls, huge strings) is dropped rather than sent upstream or rejected.
+  const otherText = "Another distinct post used only to force a fresh, unbilled request.";
+  await app.message({ type: "classify", state: { text: otherText }, meta: { authorId: 123, counts: { likes: "many" }, media: { images: ["javascript:alert(1)"] } } });
+  assert.equal(app.calls[1].body.meta, undefined);
+});
+
 test("failed requests are not cached and cache remains bounded", async () => {
   let fail = true;
   const app = harness(session(), () => fail ? response({ code: "upstream", error: "failed" }, 503) : response(serverResult()));
