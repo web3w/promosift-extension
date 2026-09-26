@@ -22,9 +22,11 @@
   "accountCreditsLabel": { "message": "Credits left" },
   "accountCreditsUnit": { "message": "credits" },
   "accountCreditsRemaining": { "message": "$COUNT$ left", "placeholders": { "count": { "content": "$1" } } },
-  "accountUsedTotal": { "message": "$COUNT$ used in total · shared across devices", "placeholders": { "count": { "content": "$1" } } },
+  "accountUsedTotal": { "message": "$COUNT$ used · all devices", "placeholders": { "count": { "content": "$1" } } },
   "accountSharedAcrossDevices": { "message": "Credits are shared across all devices" },
   "accountOutOfCredits": { "message": "Out of credits. Buy more credits in your account" },
+  "accountOutOfCreditsShort": { "message": "Out of credits." },
+  "accountGetMore": { "message": "Get more ↗" },
   "accountBuyCredits": { "message": "Buy credits" },
   "accountLogout": { "message": "Log out" },
   "accountRefreshed": { "message": "Credits refreshed" },
@@ -34,7 +36,7 @@
 
   "checkInQuerying": { "message": "Checking in status…" },
   "checkInClaiming": { "message": "Checking in…" },
-  "checkInClaimedToday": { "message": "Claimed today" },
+  "checkInClaimedToday": { "message": "Claimed" },
   "checkInClaimPrompt": { "message": "Check in · +$AMOUNT$", "placeholders": { "amount": { "content": "$1" } } },
   "checkInRetryClaim": { "message": "Retry check-in" },
   "checkInRetryQuery": { "message": "Retry checking status" },
@@ -75,25 +77,26 @@
 
   "statsHeading": { "message": "This session" },
   "statsAutoTally": { "message": "Live" },
+  "statsPaused": { "message": "Paused" },
   "statsCheckedThisSession": { "message": "Checked" },
-  "statsFlaggedAsAd": { "message": "Ads found" },
-  "statsAdRate": { "message": "Ad rate" },
+  "statsFlaggedAsAd": { "message": "Promos found" },
+  "statsAdRate": { "message": "Promo rate" },
 
   "displayModeLabel": { "message": "Display mode" },
   "displayModeLabelOnly": { "message": "Label only" },
   "displayModeFold": { "message": "Fold promos" },
-  "displayModeHintLabel": { "message": "Matching posts stay in the timeline with a label added." },
-  "displayModeHintFold": { "message": "Matching posts are folded by default; tap to expand." },
+  "displayModeHintLabel": { "message": "Adds a label; posts stay in the feed." },
+  "displayModeHintFold": { "message": "Promos are folded; tap to expand." },
 
   "settingsExpand": { "message": "Settings" },
   "settingsCollapse": { "message": "Settings" },
-  "settingsSummaryAiOn": { "message": "AI flag on" },
-  "settingsSummaryAiOff": { "message": "AI flag off" },
-  "settingsSummaryKeywords": { "message": "$COUNT$ blocked words", "placeholders": { "count": { "content": "$1" } } },
-  "settingsSummaryKeywordsNone": { "message": "no blocked words" },
-  "settingsSummarySensitivityLow": { "message": "low sensitivity" },
-  "settingsSummarySensitivityMid": { "message": "medium sensitivity" },
-  "settingsSummarySensitivityHigh": { "message": "high sensitivity" },
+  "settingsSummaryAiOn": { "message": "AI on" },
+  "settingsSummaryAiOff": { "message": "AI off" },
+  "settingsSummaryKeywords": { "message": "$COUNT$ keywords", "placeholders": { "count": { "content": "$1" } } },
+  "settingsSummaryKeywordsNone": { "message": "0 keywords" },
+  "settingsSummarySensitivityLow": { "message": "Low" },
+  "settingsSummarySensitivityMid": { "message": "Medium" },
+  "settingsSummarySensitivityHigh": { "message": "High" },
 
   "aiSectionLabel": { "message": "Content labels" },
   "aiDetectLabel": { "message": "Flag AI-generated content" },
@@ -136,6 +139,8 @@
   "badgeUnavailable": { "message": "Temporarily unavailable" },
   "badgeNetworkError": { "message": "Can't reach the service" },
   "badgeBlocked": { "message": "Blocked" },
+  "badgeNoCredits": { "message": "No credits" },
+  "badgeNoCreditsHint": { "message": "Out of credits. Open PromoSift to get more." },
   "badgeAiApprox": { "message": "AI ~$PERCENT$%", "placeholders": { "percent": { "content": "$1" } } },
 
   "veilFolded": { "message": "Folded" },
@@ -158,7 +163,5 @@
 
   "toastCheckFailed": { "message": "Check failed: $ERROR$", "placeholders": { "error": { "content": "$1" } } },
   "toastLikelyAd": { "message": "Likely $KIND$ · promo likelihood $PERCENT$%", "placeholders": { "kind": { "content": "$1" }, "percent": { "content": "$2" } } },
-  "toastNotAd": { "message": "Not likely a promo · promo likelihood $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } },
-  "toastQuotaExhausted": { "message": "$MESSAGE$ · click the PromoSift toolbar icon to check", "placeholders": { "message": { "content": "$1" } } },
-  "quotaExhaustedDefault": { "message": "Out of detection credits" }
+  "toastNotAd": { "message": "Not likely a promo · promo likelihood $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } }
 }

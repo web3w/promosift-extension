@@ -142,14 +142,14 @@
   // Reported alongside the classification request purely for logging/analytics; never included in
   // `state` above, so it cannot affect the classification signature, the client-side memory cache,
   // or the prompt sent to the ad-detection model.
-  // Turns "3.3K" / "47K" / "3.2M" into an approximate integer; X only ever shows an abbreviated count.
+  // 可见互动数可能使用英文或中文缩写；没有精确值时才使用这些近似数值。
   function parseCount(text) {
     if (!text) return null;
     const clean = text.trim().replace(/,/g, "");
     if (/^\d+$/.test(clean)) return Number(clean);
-    const m = clean.match(/^(\d+(?:\.\d+)?)\s*([KMB])$/i);
+    const m = clean.match(/^(\d+(?:\.\d+)?)\s*([KMB万亿])$/i);
     if (!m) return null;
-    const mult = { k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()];
+    const mult = { k: 1e3, m: 1e6, b: 1e9, 万: 1e4, 亿: 1e8 }[m[2].toLowerCase()];
     return Math.round(Number(m[1]) * mult);
   }
 
@@ -173,11 +173,28 @@
       }
       return null;
     };
+    const byViews = () => {
+      const nodes = el.querySelectorAll('a[href*="/status/"][href*="/analytics"], [aria-label="View count" i], [aria-label="View post analytics" i]');
+      let fallback = null;
+      for (const node of nodes) {
+        if (node.closest("article") !== el || node.closest('div[role="link"]')) continue;
+        const label = node.getAttribute("aria-label") || "";
+        const analytics = /\/status\/\d+\/analytics(?:[?#]|$)/.test(node.getAttribute("href") || "");
+        if (!analytics && !/^(View count|View post analytics)$/i.test(label)) continue;
+        // 优先读取本帖 analytics 链接中的精确浏览数，缺失时才回退到 1.5万 / 15K 等展示文本。
+        const exact = label.match(/^\s*(\d[\d,]*)\s*(?:views?\b|次(?:查看|观看|浏览))/i);
+        const n = parseCount(exact?.[1]);
+        if (Number.isFinite(n) && n >= 0) return n;
+        const visible = parseCount(node.textContent);
+        if (fallback === null && Number.isFinite(visible) && visible >= 0) fallback = visible;
+      }
+      return fallback;
+    };
     const counts = {
       replies: byLabel(["Reply"]) ?? byTestId(["reply"]),
       reposts: byLabel(["Repost", "Retweet"]) ?? byTestId(["retweet"]),
       likes: byLabel(["Like", "Liked", "Unlike"]) ?? byTestId(["like", "unlike"]),
-      views: byLabel(["View count", "View post analytics"])
+      views: byViews()
     };
     return Object.fromEntries(Object.entries(counts).filter(([, v]) => typeof v === "number"));
   }
@@ -198,6 +215,9 @@
     const meta = {};
     const authorId = site.authorId?.(el);
     if (authorId) meta.authorId = authorId;
+    // 只取当前帖子的发布时间，排除引用卡片和嵌套帖子；上传前由后台校验并统一为 UTC。
+    const time = [...el.querySelectorAll("time[datetime]")].find((node) => node.closest("article") === el && !node.closest('div[role="link"]'));
+    if (time) meta.publishedAt = time.getAttribute("datetime");
     const counts = engagementCounts(el);
     if (Object.keys(counts).length) meta.counts = counts;
     const media = mediaLinks(el);
@@ -238,6 +258,7 @@
   function setBadge(b, state, label, ai) {
     b.dataset.state = state;
     b.textContent = label;
+    if (state !== "quota") b.removeAttribute("aria-label");
     if (typeof ai === "number" && ai >= AI_BADGE_MIN) {
       const seg = document.createElement("span");
       seg.className = "jev-ai-seg";
@@ -255,7 +276,7 @@
   const RETRY_AFTER_MS = 60_000;
 
   function render(el, site, res) {
-    if (res && !res.ok && res.code === "quota") return onQuota(el, res.error);
+    if (res && !res.ok && res.code === "quota") return onQuota(el, site);
     const b = mountBadge(el, site);
     el.classList.remove("jev-ad");
     b.__jevResult = res;
@@ -359,12 +380,19 @@
   function onPointCapture(e) {
     const hit = pointTarget(e);
     if (!hit) return;
+    const isQuota = hit.badge && hit.el.__jevBadge?.dataset.state === "quota";
+    if (e.type === "keydown" && (!isQuota || !["Enter", " "].includes(e.key))) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.type !== "click") return;
+    if (e.type !== "click" && e.type !== "keydown") return;
+    // 额度标记只打开侧栏，不改变推文的展开状态或触发 X 的导航。
+    if (isQuota) {
+      if (!e.repeat) send({ type: "openSidePanel" }, () => {});
+      return;
+    }
     setRevealed(hit.el, hit.badge ? !hit.el.classList.contains("jev-reveal") : true);
   }
-  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) addEventListener(type, onPointCapture, true);
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "keydown"]) addEventListener(type, onPointCapture, true);
 
   function unfold(el) {
     el.__jevAnim?.cancel();
@@ -518,6 +546,7 @@
 
     function content(res) {
       if (!res) return `<div class="jev-tip-head">${escapeHtml(t("tipChecking"))}</div>`;
+      if (res.code === "quota") return `<div class="jev-tip-head">${escapeHtml(t("badgeNoCreditsHint"))}</div>`;
       if (!res.ok) return `<div class="jev-tip-head">${escapeHtml(ERROR_LABEL()[res.code] || t("badgeCheckFailed"))}</div><div class="jev-tip-err"></div>`;
       const r = res.result;
       const pct = Math.round(r.prob * 100);
@@ -549,7 +578,7 @@
         clearTimeout(hideTimer);
         const res = badge.__jevResult && { ...badge.__jevResult, __literal: badge.__jevLiteral, __folded: !!badge.closest(".jev-fold") };
         node.innerHTML = content(res);
-        if (res && !res.ok) node.querySelector(".jev-tip-err").textContent = res.error || t("tipUnknownError");
+        if (res && !res.ok && res.code !== "quota") node.querySelector(".jev-tip-err").textContent = res.error || t("tipUnknownError");
         const r = badge.getBoundingClientRect();
         const w = 240;
         const left = Math.min(Math.max(8, r.left), innerWidth - w - 8);
@@ -589,7 +618,7 @@
   function shutdown() {
     if (dead) return;
     dead = true;
-    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) removeEventListener(type, onPointCapture, true);
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "keydown"]) removeEventListener(type, onPointCapture, true);
     for (const type of ["wheel", "touchmove", "keydown", "pointerdown"]) removeEventListener(type, resumeAfterDisplayChange);
     mo.disconnect();
     io.disconnect();
@@ -635,6 +664,7 @@
     if (location.href === pageUrl) return;
     pageUrl = location.href;
     displayChangePaused = false;
+    clearQuotaBadge();
     foundAds.clear();
     reportCount();
   }
@@ -646,7 +676,7 @@
 
   function check(el, site) {
     if (!alive()) return shutdown();
-    if (dead || !canCheck() || quotaHit) return;
+    if (dead || !canCheck()) return;
     syncPage();
     el.__jevKey = site.key?.(el);
     const state = extract(el, site);
@@ -662,6 +692,7 @@
       render(el, site, known.res);
       return;
     }
+    if (quotaHit) return showQuotaBadge(el, site);
     // 切换模式造成布局变化时，新进入视口的帖子不能立即触发计费；缓存结果仍可重绘。
     if (displayChangePaused) return;
     sent.set(el, sig);
@@ -713,15 +744,52 @@
     });
   }
 
-  // Show a single page-wide notice once credits run out; it clears once the account is refreshed with new credits.
+  // 同一页面每次额度耗尽只轻提示一次；滚动导致节点被回收也不重复创建。
   let quotaHit = false;
-  function onQuota(el, message) {
+  let quotaBadge = null;
+  let quotaNoticeShown = false;
+  function clearQuotaBadge() {
+    if (quotaBadge?.__jevItem.__jevBadge === quotaBadge) quotaBadge.__jevItem.__jevBadge = null;
+    quotaBadge?.remove();
+    quotaBadge = null;
+    quotaNoticeShown = false;
+    tip.hide();
+  }
+  function showQuotaBadge(el, site) {
+    if (quotaNoticeShown || !el.isConnected) return;
+    quotaBadge = mountBadge(el, site);
+    quotaBadge.__jevResult = { ok: false, code: "quota" };
+    setBadge(quotaBadge, "quota", t("badgeNoCredits"));
+    quotaBadge.setAttribute("aria-label", t("badgeNoCreditsHint"));
+    quotaNoticeShown = true;
+  }
+  function clearLoadingBadges() {
+    document.querySelectorAll('.jev-badge[data-state="loading"]').forEach((b) => {
+      b.__jevItem.__jevBadge = null;
+      b.remove();
+    });
+  }
+  function onQuota(el, site) {
     el.__jevBadge?.remove();
     el.__jevBadge = null;
-    if (quotaHit) return;
     quotaHit = true;
-    document.querySelectorAll('.jev-badge[data-state="loading"]').forEach((b) => b.remove());
-    toast("ok", t("toastQuotaExhausted", message || t("quotaExhaustedDefault")), 6000);
+    clearLoadingBadges();
+    showQuotaBadge(el, site);
+  }
+  function applyQuota(exhausted) {
+    settings.quotaExhausted = exhausted === true;
+    if (quotaHit === settings.quotaExhausted) return;
+    quotaHit = settings.quotaExhausted;
+    if (!quotaHit) clearQuotaBadge();
+    else clearLoadingBadges();
+    // 恢复时仅重试未成功的帖子；成功缓存、折叠状态及在途回调全部保留。
+    for (const site of SITES) document.querySelectorAll(site.item).forEach((el) => {
+      const sig = sent.get(el);
+      if (!el.__jevSite || (sig && (memory.has(sig) || inFlight.has(sig)))) return;
+      if (!quotaHit) sent.delete(el);
+      io.unobserve(el);
+      if (canCheck()) io.observe(el);
+    });
   }
 
   // Do all the work while the browser is idle, so it never competes with the page's own rendering or scrolling.
@@ -772,6 +840,8 @@
             sent.delete(el);
             el.__jevBadge = null;
             check(el, site);
+          } else if (quotaHit && !quotaNoticeShown && inView(el)) {
+            check(el, site);
           }
           return;
         }
@@ -804,6 +874,7 @@
     foundAds.clear();
     reportCount();
     tip.hide();
+    clearQuotaBadge();
     pending.clear();
     revealed.clear();
     memory.clear();
@@ -853,6 +924,7 @@
 
   send({ type: "getSettings" }, (s) => {
     if (s) settings = s;
+    quotaHit = settings.quotaExhausted === true;
     reportCount();
     if (canCheck()) startWhenPageReady();
   });
@@ -860,9 +932,10 @@
   function applySettings(next) {
     if (!next) return;
     const modeOnly = next.mode !== settings.mode && [...new Set([...Object.keys(settings), ...Object.keys(next)])]
-      .every((key) => key === "mode" || JSON.stringify(settings[key]) === JSON.stringify(next[key]));
+      .every((key) => key === "mode" || key === "quotaExhausted" || JSON.stringify(settings[key]) === JSON.stringify(next[key]));
     settings = next;
     if (modeOnly) {
+      applyQuota(next.quotaExhausted);
       displayChangePaused = true;
       pending.clear();
       // 显示模式不影响识别结果：保留缓存、已提交标记和在途请求，只重绘折叠状态，避免重复计费。
@@ -872,7 +945,7 @@
       });
       return;
     }
-    quotaHit = false;
+    quotaHit = next.quotaExhausted === true;
     mo.disconnect();
     reset();
     if (canCheck()) start();
@@ -909,6 +982,7 @@
   // Result of the right-click "check selected text" action.
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "settingsChanged") return applySettings(msg.settings);
+    if (msg?.type === "quotaChanged") return applyQuota(msg.exhausted);
     if (msg?.type !== "showToast") return;
     if (msg.error) return toast("error", t("toastCheckFailed", msg.error));
     const r = msg.result;

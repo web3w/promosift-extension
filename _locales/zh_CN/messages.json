@@ -25,6 +25,8 @@
   "accountUsedTotal": { "message": "已用 $COUNT$ 点 · 所有设备共享", "placeholders": { "count": { "content": "$1" } } },
   "accountSharedAcrossDevices": { "message": "所有设备共享额度" },
   "accountOutOfCredits": { "message": "次数已用完，可前往账户页面购买额度" },
+  "accountOutOfCreditsShort": { "message": "额度已用完。" },
+  "accountGetMore": { "message": "获取额度 ↗" },
   "accountBuyCredits": { "message": "购买额度" },
   "accountLogout": { "message": "退出登录" },
   "accountRefreshed": { "message": "额度已刷新" },
@@ -75,6 +77,7 @@
 
   "statsHeading": { "message": "本次登录" },
   "statsAutoTally": { "message": "实时" },
+  "statsPaused": { "message": "已暂停" },
   "statsCheckedThisSession": { "message": "已检测" },
   "statsFlaggedAsAd": { "message": "广告数" },
   "statsAdRate": { "message": "广告占比" },
@@ -136,6 +139,8 @@
   "badgeUnavailable": { "message": "暂不可用" },
   "badgeNetworkError": { "message": "连不上服务" },
   "badgeBlocked": { "message": "屏蔽" },
+  "badgeNoCredits": { "message": "额度已用完" },
+  "badgeNoCreditsHint": { "message": "额度已用完，打开 PromoSift 获取更多额度。" },
   "badgeAiApprox": { "message": "AI 约 $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } },
 
   "veilFolded": { "message": "已折叠" },
@@ -158,7 +163,5 @@
 
   "toastCheckFailed": { "message": "检测失败：$ERROR$", "placeholders": { "error": { "content": "$1" } } },
   "toastLikelyAd": { "message": "疑似$KIND$ · 广告概率 $PERCENT$%", "placeholders": { "kind": { "content": "$1" }, "percent": { "content": "$2" } } },
-  "toastNotAd": { "message": "不像广告 · 广告概率 $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } },
-  "toastQuotaExhausted": { "message": "$MESSAGE$ · 点工具栏里的 PromoSift 图标查看", "placeholders": { "message": { "content": "$1" } } },
-  "quotaExhaustedDefault": { "message": "检测次数已用完" }
+  "toastNotAd": { "message": "不像广告 · 广告概率 $PERCENT$%", "placeholders": { "percent": { "content": "$1" } } }
 }

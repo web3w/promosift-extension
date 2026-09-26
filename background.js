@@ -27,10 +27,24 @@ function loadConfig() {
 }
 // meta comes straight from page DOM content read by content.js; bound and coerce it defensively
 // before it ever leaves the extension, the same way normalizePost bounds `state` server-side.
+function normalizePublishedAt(value) {
+  if (typeof value !== "string") return undefined;
+  const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)(Z|[+-]\d{2}:\d{2})$/);
+  if (!match) return undefined;
+  // Date 会把 2 月 30 日等输入顺延；先核对本地日期部分，不能把错误时间当成有效发布时间。
+  const local = new Date(`${match[1]}Z`);
+  if (!Number.isFinite(local.getTime()) || local.toISOString().slice(0, 19) !== match[1].slice(0, 19)) return undefined;
+  if (match[2] !== "Z" && (Number(match[2].slice(1, 3)) > 23 || Number(match[2].slice(4, 6)) > 59)) return undefined;
+  const date = new Date(value);
+  const iso = Number.isFinite(date.getTime()) ? date.toISOString() : undefined;
+  return iso?.length === 24 ? iso : undefined;
+}
 function sanitizeMeta(meta) {
   if (!meta || typeof meta !== "object") return undefined;
   const out = {};
   if (typeof meta.authorId === "string" && meta.authorId.trim()) out.authorId = meta.authorId.trim().slice(0, 100);
+  const publishedAt = normalizePublishedAt(meta.publishedAt);
+  if (publishedAt) out.publishedAt = publishedAt;
   if (meta.counts && typeof meta.counts === "object") {
     const counts = {};
     for (const key of ["replies", "reposts", "likes", "views"]) {
@@ -101,7 +115,7 @@ async function assertCurrent(ctx) {
 async function getPublicSettings() {
   const ctx = await context();
   const settings = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).map((key) => [key, ctx.settings[key]]));
-  return { ...settings, authenticated: Boolean(ctx.auth) };
+  return { ...settings, authenticated: Boolean(ctx.auth), quotaExhausted: Boolean(ctx.auth && (quotaExhausted || ctx.account?.credits === 0)) };
 }
 let settingsNotice = 0;
 async function notifySettings() {
@@ -111,13 +125,29 @@ async function notifySettings() {
   if (notice !== settingsNotice) return;
   await Promise.all(tabs.map((tab) => chrome.tabs.sendMessage(tab.id, { type: "settingsChanged", settings }).catch(() => {})));
 }
+let quotaNotice = 0;
+async function notifyQuota() {
+  const notice = ++quotaNotice;
+  const settings = await getPublicSettings();
+  const currentVersion = version;
+  const tabs = await chrome.tabs.query({ url: ["https://x.com/*", "https://twitter.com/*"] });
+  if (notice !== quotaNotice || currentVersion !== version) return;
+  // 额度变化单独通知，恢复时保留页面已经检测的结果，不触发设置重置。
+  const message = { type: "quotaChanged", exhausted: settings.quotaExhausted };
+  await Promise.all([
+    ...tabs.map((tab) => chrome.tabs.sendMessage(tab.id, message).catch(() => {})),
+    chrome.runtime.sendMessage(message).catch(() => {})
+  ]);
+}
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.auth) invalidate();
-  const recovered = changes.account?.newValue?.credits > (changes.account?.oldValue?.credits || 0);
+  const recovered = changes.account?.newValue?.credits > 0 && (quotaExhausted || changes.account?.oldValue?.credits === 0);
   if (recovered) quotaExhausted = false;
-  if (recovered || changes.auth || Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) {
+  if (changes.auth || Object.keys(DEFAULT_SETTINGS).some((key) => key in changes)) {
     notifySettings().catch(() => {});
+  } else if (recovered || (changes.account && (changes.account.newValue?.credits === 0) !== (changes.account.oldValue?.credits === 0))) {
+    notifyQuota().catch(() => {});
   }
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -164,7 +194,7 @@ async function saveAccount(account, ctx, sequence) {
     if (account.credits > 0) quotaExhausted = false;
     await chrome.storage.local.set({ account });
   });
-  if (recovered) await notifySettings();
+  if (recovered) await notifyQuota();
 }
 async function api(path, { method = "GET", body, ctx, anonymous = false } = {}) {
   const base = ctx?.base || await loadConfig();
@@ -185,9 +215,12 @@ async function api(path, { method = "GET", body, ctx, anonymous = false } = {}) 
   if (ctx) await assertCurrent(ctx);
   if (!res.ok) {
     if (ctx && (res.status === 401 || data.code === "account_disabled")) await clearSession(ctx);
-    if (res.status === 402) quotaExhausted = true;
+    if (res.status === 402 && !quotaExhausted) {
+      quotaExhausted = true;
+      notifyQuota().catch(() => {});
+    }
     // 旧版线上服务没有 Google 接口时，明确提示尚未启用，避免误报授权失败。
-    const code = path === "/auth/google/status" && res.status === 404 ? "google_unavailable" : data.code || (res.status >= 500 ? "upstream" : "other");
+    const code = path === "/auth/google/status" && res.status === 404 ? "google_unavailable" : res.status === 402 ? "quota" : data.code || (res.status >= 500 ? "upstream" : "other");
     throw new PromoSiftError(code, data.error || `Request failed (${res.status})`);
   }
   if (ctx && data.account) await saveAccount(data.account, ctx, sequence);
@@ -383,11 +416,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const trusted = sender.url === chrome.runtime.getURL("popup.html");
   const xTab = Number.isInteger(sender.tab?.id) && /^https:\/\/(?:x|twitter)\.com\//.test(sender.url || "");
   // Login and logout may only be called from the extension popup; the page's content script has no account-management privileges.
-  if (!["getSettings", "classify", "setBadgeCount"].includes(msg?.type) && !trusted) {
+  if (!["getSettings", "classify", "setBadgeCount", "openSidePanel"].includes(msg?.type) && !trusted) {
     sendResponse({ ok: false, code: "forbidden", error: "Only the extension popup can perform this action" });
     return false;
   }
   switch (msg?.type) {
+    case "openSidePanel": {
+      if (!xTab) {
+        sendResponse({ ok: false, code: "forbidden" });
+        return false;
+      }
+      // 直接沿用点击消息的用户手势，且只能打开来源标签页的侧栏。
+      return reply(chrome.sidePanel.open({ tabId: sender.tab.id }).then(() => ({ ok: true })));
+    }
     case "setBadgeCount": {
       if (!xTab || !Number.isSafeInteger(msg.count) || msg.count < 0) {
         sendResponse({ ok: false, code: "forbidden" });

@@ -41,8 +41,8 @@ function renderSettingsSummary() {
     words ? t("settingsSummaryKeywords", String(words)) : t("settingsSummaryKeywordsNone"),
     t(`settingsSummarySensitivity${currentSettings.threshold === 0.8 ? "Low" : currentSettings.threshold === 0.4 ? "High" : "Mid"}`)
   ];
-  // 敏感度独立成行，避免与 AI 状态和关键词数量挤在一起。
-  $("settingsSummary").textContent = parts.slice(0, 2).join(" · ") + "\n" + parts[2];
+  // 三项摘要统一用间隔点分隔，保持紧凑且便于阅读。
+  $("settingsSummary").textContent = parts.join(" · ");
 }
 let settingsAnimation;
 $("settingsToggle").addEventListener("click", async () => {
@@ -84,7 +84,8 @@ async function updateCheckIn(claim = false) {
   const current = ++checkInVersion;
   checkInBusy = true;
   $("checkIn").disabled = true;
-  $("checkIn").textContent = claim ? t("checkInClaiming") : t("checkInQuerying");
+  // 已有签到状态时静默查询，避免 Claimed 反复切换为加载文案；领取仍显示进度。
+  if (claim || !checkInState) $("checkIn").textContent = claim ? t("checkInClaiming") : t("checkInQuerying");
   // Only reads state on init/refresh; a write request is only sent when the user explicitly clicks claim. Discard stale responses after switching accounts.
   const res = await send({ type: claim ? "claimCheckIn" : "getCheckIn" });
   if (current !== checkInVersion) return;
@@ -161,7 +162,8 @@ async function load() {
   renderStats(stats);
   renderSettingsSummary();
   await syncAccount();
-  if (authenticated) refreshAccount();
+  // syncAccount 已触发首次签到查询，初始化刷新余额时不再重复查询。
+  if (authenticated) refreshAccount({ refreshCheckIn: false });
 }
 async function syncAccount({ resetLoginState = true } = {}) {
   const current = ++viewVersion;
@@ -187,7 +189,12 @@ async function syncAccount({ resetLoginState = true } = {}) {
 }
 function renderAccount(account) {
   setCheckInAccount(account.id);
-  $("account").dataset.state = account.credits > 0 ? "ok" : "empty";
+  // 后台确认额度不足时也显示暂停，避免余额缓存尚未更新时仍显示 Live。
+  const exhausted = currentSettings?.quotaExhausted === true || account.credits === 0;
+  $("account").dataset.state = exhausted ? "empty" : "ok";
+  $("accountEmptyNote").hidden = !exhausted;
+  $("sessionStatus").dataset.state = exhausted ? "paused" : "live";
+  $("sessionStatus").textContent = t(exhausted ? "statsPaused" : "statsAutoTally");
   const unit = t("accountCreditsUnit");
   $("creditsValue").textContent = fmt(account.credits);
   $("creditsUnit").textContent = unit;
@@ -197,11 +204,11 @@ function renderAccount(account) {
   $("accountEmail").title = account.email;
   $("accountUsedLine").textContent = t("accountUsedTotal", fmt(account.used));
 }
-async function refreshAccount() {
+async function refreshAccount({ refreshCheckIn = true } = {}) {
   const res = await send({ type: "getAccount" });
   await syncAccount();
   if (res?.ok) {
-    await updateCheckIn();
+    if (refreshCheckIn) await updateCheckIn();
   } else if (["auth_required", "account_disabled"].includes(res?.code)) {
     await syncAccount();
     message($("loginStatus"), res.error, "error");
@@ -212,6 +219,14 @@ async function refreshAccount() {
 chrome.storage.onChanged.addListener((c) => {
   if (c.stats) renderStats(c.stats.newValue);
   if (c.auth || c.account || c.dataConsent) syncAccount({ resetLoginState: !c.dataConsent });
+});
+chrome.runtime.onMessage.addListener((msg) => {
+  // 重新读取当前账户状态，不把旧账户的异步额度通知直接应用到界面。
+  if (msg?.type === "quotaChanged") syncAccount();
+});
+window.addEventListener("focus", () => {
+  // 从领取或购买页面返回时同步余额，不在后台持续轮询。
+  if (authenticated) refreshAccount();
 });
 
 // ---------- Sign-in flow ----------

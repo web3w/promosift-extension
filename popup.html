@@ -118,6 +118,7 @@
           </span>
         </div>
         <div class="quota"><b id="creditsValue">0</b><span id="creditsUnit"></span></div>
+        <p class="credit-note" id="accountEmptyNote" hidden><span data-i18n="accountOutOfCreditsShort"></span> <a href="https://promosift.app/account" target="_blank" rel="noopener noreferrer" data-i18n="accountGetMore"></a></p>
         <div class="bar"><i id="creditsBar" style="width: 0%"></i></div>
         <div class="line"><span class="mail" id="accountUsedLine"></span></div>
         <div class="acts">
@@ -137,7 +138,7 @@
       </section>
 
       <section class="session-stats" id="sessionStats">
-        <div class="gsp"><span data-i18n="statsHeading"></span><span class="live" data-i18n="statsAutoTally"></span></div>
+        <div class="gsp"><span data-i18n="statsHeading"></span><span class="live" id="sessionStatus" data-i18n="statsAutoTally" aria-live="polite"></span></div>
         <div class="stats">
           <div class="tile"><div class="v" id="checked">0</div><div class="k" data-i18n="statsCheckedThisSession"></div></div>
           <div class="tile"><div class="v amber" id="ads">0</div><div class="k" data-i18n="statsFlaggedAsAd"></div></div>

@@ -32,6 +32,9 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
   const menus = [];
   const toasts = [];
   const badges = [];
+  const panels = [];
+  const broadcasts = [];
+  const watchedTabs = [];
   const accessLevels = [];
   let onChanged = () => {};
   let onMessage;
@@ -50,6 +53,7 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
     identity: { getRedirectURL: () => "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/google", ...identity },
     runtime: {
       getURL: (name) => `chrome-extension://adsift-test/${name}`,
+      async sendMessage(message) { broadcasts.push(clone(message)); },
       onMessage: { addListener: (fn) => (onMessage = fn) },
       onInstalled: { addListener: (fn) => (onInstalled = fn) }
     },
@@ -84,9 +88,12 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
       async setBadgeText(details) { badges.push(clone(details)); },
       async setBadgeBackgroundColor() {}
     },
+    sidePanel: {
+      async open(options) { panels.push(clone(options)); }
+    },
     tabs: {
       onUpdated: { addListener: (fn) => (onTabUpdated = fn) },
-      async query() { return []; },
+      async query() { return clone(watchedTabs); },
       async sendMessage(tabId, message) {
         toasts.push({ tabId, message: clone(message) });
       }
@@ -114,6 +121,9 @@ function harness(initial = {}, remote = () => response(serverResult()), timers =
     menus,
     toasts,
     badges,
+    panels,
+    broadcasts,
+    watchedTabs,
     accessLevels,
     set: (value) => chrome.storage.local.set(value),
     install: () => onInstalled(),
@@ -153,6 +163,59 @@ test("toolbar badge counts identified ads per X tab and rejects other senders", 
   assert.equal((await app.message({ type: "setBadgeCount", count: -1 }, "https://x.com/home", 7)).ok, false);
   assert.equal(app.badges.length, 5);
   assert.equal(app.calls.length, 0);
+});
+
+test("额度徽章只打开来源 X 标签页的侧栏，不信任消息中的标签页编号", async () => {
+  const app = harness(session());
+  const pending = app.message({ type: "openSidePanel", tabId: 99 }, "https://x.com/home", 7);
+  // open 必须在处理点击消息时直接执行，异步查询可能丢失用户手势。
+  assert.deepEqual(app.panels, [{ tabId: 7 }]);
+  assert.equal((await pending).ok, true);
+  assert.equal((await app.message({ type: "openSidePanel" }, "https://twitter.com/home", 8)).ok, true);
+  for (const url of ["https://example.com/", "https://x.com.evil.example/", "http://x.com/home", POPUP]) {
+    assert.equal((await app.message({ type: "openSidePanel" }, url, 7)).code, "forbidden");
+  }
+  assert.equal((await app.message({ type: "openSidePanel" }, "https://x.com/home")).code, "forbidden");
+  assert.deepEqual(app.panels, [{ tabId: 7 }, { tabId: 8 }]);
+  assert.equal(app.calls.length, 0);
+});
+
+test("余额跨零时单独同步暂停和恢复，不广播会清空页面结果的设置变更", async () => {
+  const app = harness(session("alice", 1));
+  app.watchedTabs.push({ id: 7 });
+  assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, false);
+  await app.set({ account: account("alice", 0, 1) });
+  await waitFor(() => app.broadcasts.length === 1);
+  assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, true);
+  assert.deepEqual(app.broadcasts[0], { type: "quotaChanged", exhausted: true });
+  await app.set({ account: account("alice", 20, 1) });
+  await waitFor(() => app.broadcasts.length === 2);
+  assert.deepEqual(app.broadcasts[1], { type: "quotaChanged", exhausted: false });
+  assert.deepEqual(app.toasts, [
+    { tabId: 7, message: { type: "quotaChanged", exhausted: true } },
+    { tabId: 7, message: { type: "quotaChanged", exhausted: false } }
+  ]);
+  await app.set({ account: account("alice", 19, 2) });
+  await tick();
+  assert.equal(app.broadcasts.length, 2);
+  assert.equal(app.calls.length, 0);
+});
+
+test("服务端 402 也同步额度耗尽，重新确认余额后解除暂停", async () => {
+  const app = harness(session(), ({ url }) => url.endsWith("/v1/me")
+    ? response({ ok: true, account: account() })
+    : response({ error: "Out of credits" }, 402));
+  app.watchedTabs.push({ id: 7 });
+  const result = await app.message({ type: "classify", state: { text: "First post" } });
+  assert.equal(result.code, "quota");
+  await waitFor(() => app.broadcasts.length === 1);
+  assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, true);
+  assert.deepEqual(app.broadcasts[0], { type: "quotaChanged", exhausted: true });
+  // 账户内容完全相同时不会触发 storage.onChanged，仍需解除 402 的临时暂停。
+  assert.equal((await app.message({ type: "getAccount" })).ok, true);
+  assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, false);
+  assert.deepEqual(app.broadcasts.at(-1), { type: "quotaChanged", exhausted: false });
+  assert.ok(app.toasts.every(({ message }) => message.type === "quotaChanged"));
 });
 
 test("en and zh_CN locales define the same message keys", () => {
@@ -637,16 +700,37 @@ test("cache keys include input and AI/topics but ignore presentation and object 
 test("meta rides along on the classify request but never affects the cache key or billing", async () => {
   const app = harness(session());
   const message = { type: "classify", state: { text: "A post with engagement metadata attached for reporting only." } };
-  await app.message({ ...message, meta: { authorId: "alice", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } } });
+  await app.message({ ...message, meta: { authorId: "alice", publishedAt: "2026-09-26T12:00:00+08:00", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } } });
   // Same content, different meta (or none): still a single cached request, no extra billing.
-  await app.message({ ...message, meta: { authorId: "bob" } });
+  await app.message({ ...message, meta: { authorId: "bob", publishedAt: "2026-09-25T12:00:00Z" } });
   await app.message(message);
   assert.equal(app.calls.length, 1);
-  assert.deepEqual(app.calls[0].body.meta, { authorId: "alice", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } });
+  assert.deepEqual(app.calls[0].body.meta, { authorId: "alice", publishedAt: "2026-09-26T04:00:00.000Z", counts: { likes: 12, views: 900 }, media: { images: ["https://pbs.twimg.com/media/x.jpg"] } });
+  assert.equal(app.calls[0].body.state.publishedAt, undefined);
   // Malformed meta (wrong types, non-https urls, huge strings) is dropped rather than sent upstream or rejected.
   const otherText = "Another distinct post used only to force a fresh, unbilled request.";
   await app.message({ type: "classify", state: { text: otherText }, meta: { authorId: 123, counts: { likes: "many" }, media: { images: ["javascript:alert(1)"] } } });
   assert.equal(app.calls[1].body.meta, undefined);
+});
+
+test("发布时间仅接受有效的带时区 ISO 日期并在上传前转为 UTC", async () => {
+  const app = harness(session());
+  const cases = [
+    ["2026-09-26T04:00:00Z", "2026-09-26T04:00:00.000Z"],
+    ["2024-02-29T23:45:12.5-03:30", "2024-03-01T03:15:12.500Z"],
+    [undefined, undefined], [1780000000000, undefined], ["not a date", undefined],
+    ["2026-09-26T04:00:00", undefined], ["2026-09-26", undefined],
+    ["2026-02-30T04:00:00Z", undefined], ["2025-02-29T04:00:00Z", undefined],
+    ["2026-09-26T24:00:00Z", undefined], ["2026-09-26T04:00:60Z", undefined],
+    ["2026-09-26T04:00:00+24:00", undefined], ["2026-09-26T04:00:00+00:60", undefined],
+    ["2026-09-26T04:00:00.1234Z", undefined], ["0000-01-01T00:00:00+01:00", undefined],
+    ["9999-12-31T23:00:00-02:00", undefined]
+  ];
+  for (const [index, [publishedAt, expected]] of cases.entries()) {
+    const result = await app.message({ type: "classify", state: { text: `unique publication metadata case ${index}` }, meta: { publishedAt } });
+    assert.equal(result.ok, true);
+    assert.deepEqual(app.calls[index].body.meta, expected ? { publishedAt: expected } : undefined, String(publishedAt));
+  }
 });
 
 test("failed requests are not cached and cache remains bounded", async () => {
