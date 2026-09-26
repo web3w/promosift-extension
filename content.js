@@ -42,6 +42,7 @@
   // 登录不等于同意：首次自动识别必须先在插件中明确授权。
   const canCheck = () => settings.dataConsent === true && (settings.authenticated || settings.keySource === "user");
   let settingsVersion = 0;
+  let displayChangePaused = false;
   // Threshold for meaning-based keyword matches: in practice "just briefly mentioned" scores around 0.7;
   // only 0.8+ reliably means the content is actually about the topic.
   const TOPIC_THRESHOLD = 0.8;
@@ -493,6 +494,7 @@
     if (dead) return;
     dead = true;
     for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) removeEventListener(type, onPointCapture, true);
+    for (const type of ["wheel", "touchmove", "keydown", "pointerdown"]) removeEventListener(type, resumeAfterDisplayChange);
     mo.disconnect();
     io.disconnect();
     themeObserver.disconnect();
@@ -536,6 +538,7 @@
   function syncPage() {
     if (location.href === pageUrl) return;
     pageUrl = location.href;
+    displayChangePaused = false;
     foundAds.clear();
     reportCount();
   }
@@ -554,15 +557,18 @@
     if (!state) return;
     const sig = JSON.stringify(state);
     if (sent.get(el) === sig) return;
-    sent.set(el, sig);
     // This content was already classified (element was recycled and rebuilt): show the result directly.
     const known = memory.get(sig);
     if (known) {
+      sent.set(el, sig);
       el.__jevAuthor = state.author || "";
       el.__jevLiteral = known.literal;
       render(el, site, known.res);
       return;
     }
+    // 切换模式造成布局变化时，新进入视口的帖子不能立即触发计费；缓存结果仍可重绘。
+    if (displayChangePaused) return;
+    sent.set(el, sig);
     const b = mountBadge(el, site);
     b.__jevResult = null;
     setBadge(b, "loading", t("badgeChecking"));
@@ -695,6 +701,7 @@
 
   function reset() {
     settingsVersion++;
+    displayChangePaused = false;
     foundAds.clear();
     reportCount();
     tip.hide();
@@ -757,6 +764,8 @@
       .every((key) => key === "mode" || JSON.stringify(settings[key]) === JSON.stringify(next[key]));
     settings = next;
     if (modeOnly) {
+      displayChangePaused = true;
+      pending.clear();
       // 显示模式不影响识别结果：保留缓存、已提交标记和在途请求，只重绘折叠状态，避免重复计费。
       revealed.clear();
       for (const site of SITES) document.querySelectorAll(site.item).forEach((el) => {
@@ -769,6 +778,20 @@
     reset();
     if (canCheck()) start();
   }
+
+  // 只由用户继续浏览恢复扫描，不能用 scroll 事件：折叠后的滚动锚定也会触发它。
+  function resumeAfterDisplayChange(event) {
+    if (!displayChangePaused || !event.isTrusted || dead) return;
+    if (event.type === "keydown" && (!["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(event.key) || event.target.closest?.("input, textarea, [contenteditable=true]"))) return;
+    if (event.type === "pointerdown" && event.clientX < document.documentElement.clientWidth) return;
+    displayChangePaused = false;
+    for (const site of SITES) document.querySelectorAll(site.item).forEach((el) => {
+      if (!el.__jevSite) return;
+      io.unobserve(el);
+      io.observe(el);
+    });
+  }
+  for (const type of ["wheel", "touchmove", "keydown", "pointerdown"]) addEventListener(type, resumeAfterDisplayChange, { passive: true });
 
   // ---------- Bottom-of-page toast ----------
   function toast(state, text, ms = 3200) {

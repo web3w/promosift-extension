@@ -21,6 +21,8 @@ let checkInState = null;
 let checkInBusy = false;
 let checkInVersion = 0;
 let currentSettings = null;
+let sessionChecked = 0;
+let activePageVersion = 0;
 
 function message(el, text = "", tone = "") {
   el.textContent = text;
@@ -39,7 +41,8 @@ function renderSettingsSummary() {
     words ? t("settingsSummaryKeywords", String(words)) : t("settingsSummaryKeywordsNone"),
     t(`settingsSummarySensitivity${currentSettings.threshold === 0.8 ? "Low" : currentSettings.threshold === 0.4 ? "High" : "Mid"}`)
   ];
-  $("settingsSummary").textContent = parts.join(" · ");
+  // 敏感度独立成行，避免与 AI 状态和关键词数量挤在一起。
+  $("settingsSummary").textContent = parts.slice(0, 2).join(" · ") + "\n" + parts[2];
 }
 let settingsAnimation;
 $("settingsToggle").addEventListener("click", async () => {
@@ -191,6 +194,7 @@ function renderAccount(account) {
   const total = account.credits + account.used;
   $("creditsBar").style.width = `${total > 0 ? Math.min(100, Math.round((account.credits / total) * 100)) : 0}%`;
   $("accountEmail").textContent = account.email;
+  $("accountEmail").title = account.email;
   $("accountUsedLine").textContent = t("accountUsedTotal", fmt(account.used));
 }
 async function refreshAccount() {
@@ -472,7 +476,25 @@ bindRowToggle("aiRow", "aiDetect", "aiDetect");
 
 // ---------- Stats ----------
 
+// 仅查询已获授权的 X 域名，不增加读取其他网站地址的权限。
+async function updateOpenXCard() {
+  const version = ++activePageVersion;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true, url: ["https://x.com/*", "https://twitter.com/*"] });
+    if (version !== activePageVersion) return;
+    const show = sessionChecked === 0 && tabs.length === 0;
+    $("openXCard").hidden = !show;
+    $("sessionStats").hidden = show;
+  } catch { /* 无法确认当前页时保留统计区。 */ }
+}
+// 侧栏保持打开时，也跟随切换标签页和导航更新提示。
+chrome.tabs.onActivated.addListener(updateOpenXCard);
+chrome.tabs.onUpdated.addListener((_id, change) => {
+  if (change.url || change.status === "complete") updateOpenXCard();
+});
 function renderStats(stats = { checked: 0, ads: 0 }) {
+  sessionChecked = stats.checked || 0;
+  updateOpenXCard();
   $("checked").textContent = fmt(stats.checked);
   $("ads").textContent = fmt(stats.ads);
   const rate = stats.checked ? Math.round((stats.ads / stats.checked) * 100) : 0;

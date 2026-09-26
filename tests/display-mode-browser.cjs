@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
   try {
     const errors = [];
     ctx.on('page', page => page.on('pageerror', error => errors.push(error.message)));
-    await ctx.route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body: '<html><body><article data-testid="tweet"><div data-testid="User-Name">Author @author</div><a href="/author/status/123"><time>now</time></a><div data-testid="tweetText">Try our new product today and get the special offer with this promotional code.</div></article></body></html>' }));
+    await ctx.route('https://x.com/**', route => route.fulfill({ contentType: 'text/html', body: '<html><body><article data-testid="tweet"><div data-testid="User-Name">Author @author</div><a href="/author/status/123"><time>now</time></a><div data-testid="tweetText" style="min-height:1400px">Try our new product today and get the special offer with this promotional code.</div></article><article data-testid="tweet"><div data-testid="User-Name">Another @author</div><a href="/author/status/456"><time>now</time></a><div data-testid="tweetText" style="min-height:1400px">A different post outside the initial viewport, revealed only by folding.</div></article></body></html>' }));
     const worker = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
     await worker.evaluate(async () => {
       await storageReady;
@@ -41,25 +41,38 @@ const assert = require('node:assert/strict');
     await feed.waitForTimeout(800);
     assert.equal(await worker.evaluate(() => requests), 1);
     await worker.evaluate(() => finishCheck());
-    await feed.locator('article.jev-fold').waitFor();
+    await feed.locator('article.jev-fold').first().waitFor();
     for (let i = 0; i < 3; i++) {
       await mode('label');
       await feed.waitForFunction(() => !document.querySelector('article').classList.contains('jev-fold'));
       await mode('fold');
-      await feed.locator('article.jev-fold').waitFor();
+      await feed.locator('article.jev-fold').first().waitFor();
     }
     await feed.waitForTimeout(1000);
     assert.equal(await worker.evaluate(() => requests), 1);
     assert.equal(await worker.evaluate(async () => (await chrome.storage.local.get('account')).account.used), 1);
+    await mode('label');
+    await feed.waitForFunction(() => !document.querySelector('article').classList.contains('jev-fold'));
     // 刷新和另一标签页没有内容脚本内存，仍应命中后台持久缓存。
     await feed.reload();
-    await feed.locator('article.jev-fold').waitFor();
+    await feed.locator('.jev-badge[data-state=ad]').first().waitFor();
     const secondFeed = await ctx.newPage();
     await secondFeed.goto('https://x.com/home');
-    await secondFeed.locator('article.jev-fold').waitFor();
+    await secondFeed.locator('.jev-badge[data-state=ad]').first().waitFor();
     assert.equal(await worker.evaluate(() => requests), 1);
     assert.equal(await worker.evaluate(async () => (await chrome.storage.local.get('account')).account.used), 1);
+    // 再次切换只重绘；真正滚动浏览后才允许检查刚露出的新帖。
+    await mode('fold');
+    await secondFeed.locator('article.jev-fold').first().waitFor();
+    await secondFeed.waitForTimeout(800);
+    assert.equal(await worker.evaluate(() => requests), 1);
+    await secondFeed.bringToFront();
+    await secondFeed.mouse.wheel(0, 200);
+    await secondFeed.locator('.jev-badge[data-state=loading]').waitFor();
+    assert.equal(await worker.evaluate(() => requests), 2);
+    await worker.evaluate(() => finishCheck());
+    await secondFeed.locator('article.jev-fold').nth(1).waitFor();
     assert.deepEqual(errors, []);
-    console.log('PASS: toggling modes during and after classification keeps one request / one credit; mode changes, page reload and another tab reuse the result');
+    console.log('PASS: toggling modes during and after classification keeps one request / one credit; mode reflow does not classify newly exposed posts; explicit scrolling resumes checks');
   } finally { await ctx.close(); await fs.rm(profile, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exit(1); });

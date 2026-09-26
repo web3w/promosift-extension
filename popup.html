@@ -119,17 +119,24 @@
         </div>
         <div class="quota"><b id="creditsValue">0</b><span id="creditsUnit"></span></div>
         <div class="bar"><i id="creditsBar" style="width: 0%"></i></div>
-        <div class="line"><span class="mail" id="accountUsedLine"></span><span class="lbl" id="accountEmail"></span></div>
-        <div class="sep"></div>
+        <div class="line"><span class="mail" id="accountUsedLine"></span></div>
         <div class="acts">
           <button type="button" class="btn btn-brand" id="checkIn" disabled data-i18n="checkInQuerying"></button>
           <a class="btn" href="https://promosift.app/account" target="_blank" rel="noopener noreferrer" data-i18n="accountBuyCredits"></a>
-          <span class="lbl" id="checkInNote" style="margin-left: auto"></span>
         </div>
+        <p class="lbl" id="checkInNote"></p>
         <p class="status" id="accountStatus" role="status" aria-live="polite" hidden></p>
       </section>
 
-      <section class="session-stats">
+      <section class="open-x-card" id="openXCard" hidden>
+        <div class="open-x-heading">
+          <span class="open-x-icon" aria-hidden="true">↗</span>
+          <div><h3 data-i18n="openXTitle"></h3><p data-i18n="openXHint"></p></div>
+        </div>
+        <a class="btn btn-brand btn-block" href="https://x.com/" target="_blank" rel="noopener noreferrer"><span data-i18n="openXButton"></span><span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="session-stats" id="sessionStats">
         <div class="gsp"><span data-i18n="statsHeading"></span><span class="live" data-i18n="statsAutoTally"></span></div>
         <div class="stats">
           <div class="tile"><div class="v" id="checked">0</div><div class="k" data-i18n="statsCheckedThisSession"></div></div>
@@ -196,7 +203,9 @@
     </div>
 
     <footer class="pop-foot">
-      <span class="grp-inline">
+      <span class="grp-inline account-footer">
+        <span id="accountEmail"></span>
+        <span class="sep-dot" aria-hidden="true">·</span>
         <button type="button" id="logout" data-i18n="accountLogout"></button>
       </span>
       <span class="grp-inline">

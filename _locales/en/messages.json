@@ -1,4 +1,7 @@
 {
+  "openXTitle": { "message": "Not on x.com" },
+  "openXHint": { "message": "Ad checking runs only on X (Twitter). This tab stays idle — no credits are used." },
+  "openXButton": { "message": "Open X/Twitter.com" },
   "googleLogin": { "message": "Continue with Google" },
   "loginOrEmail": { "message": "or use email" },
   "googleCancelled": { "message": "Google sign-in was cancelled. You can try again or use email." },
@@ -36,7 +39,7 @@
   "checkInRetryClaim": { "message": "Retry check-in" },
   "checkInRetryQuery": { "message": "Retry checking status" },
   "checkInNotConfirmed": { "message": "Check-in result not confirmed yet, please retry." },
-  "checkInNote": { "message": "Resets daily at 00:00 Beijing time" },
+  "checkInNote": { "message": "Resets daily at 16:00 UTC" },
 
   "statusSignedOut": { "message": "Not signed in — detection is paused" },
   "statusSignedIn": { "message": "Signed in — detection is on" },

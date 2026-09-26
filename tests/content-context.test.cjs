@@ -51,7 +51,7 @@ test("旧页面在插件上下文失效后停止监听，不再抛出 i18n 异�
   page.runtime.id = undefined;
   assert.doesNotThrow(() => page.message({ type: "showToast", error: "test" }));
   assert.equal(page.stopped(), 3);
-  assert.equal(page.removed(), 5);
+  assert.equal(page.removed(), 9);
   assert.doesNotThrow(() => page.pendingMessage({ authenticated: true }));
 });
 
