@@ -172,8 +172,8 @@
 .jev-veil-action { flex: none; font-weight: 600; }
 
 /* collapse: only the fold bar remains visible, everything else is hidden (X's virtual list remeasures height and the post below moves up to fill the gap). */
-.jev-fold[data-jev-fold="collapse"]:not(.jev-reveal) > :not(.jev-veil) { display: none !important; }
-.jev-fold[data-jev-fold="collapse"]:not(.jev-reveal) > .jev-veil {
+[data-jev-fold="collapse"]:not([data-jev-revealed="true"]) > :not(.jev-veil) { display: none !important; }
+[data-jev-fold="collapse"]:not([data-jev-revealed="true"]) > .jev-veil {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -190,7 +190,7 @@
   -webkit-tap-highlight-color: transparent;
   transition: background-color 150ms ease;
 }
-.jev-fold[data-jev-fold="collapse"] > .jev-veil::before {
+[data-jev-fold="collapse"] > .jev-veil::before {
   content: "";
   flex: none;
   width: 6px;
@@ -199,12 +199,12 @@
   background: var(--jev-ad-fg);
   opacity: 0.8;
 }
-.jev-fold[data-jev-fold="collapse"] > .jev-veil .jev-veil-text { flex: 1; }
-.jev-fold[data-jev-fold="collapse"] > .jev-veil .jev-veil-action { color: var(--jev-tip-fg); }
+[data-jev-fold="collapse"] > .jev-veil .jev-veil-text { flex: 1; }
+[data-jev-fold="collapse"] > .jev-veil .jev-veil-action { color: var(--jev-tip-fg); }
 @media (hover: hover) and (pointer: fine) {
-  .jev-fold[data-jev-fold="collapse"] > .jev-veil:hover { background: var(--jev-ok-bg); }
+  [data-jev-fold="collapse"] > .jev-veil:hover { background: var(--jev-ok-bg); }
 }
-.jev-fold[data-jev-fold="collapse"] > .jev-veil:focus-visible { outline: 2px solid var(--jev-ad-ring); outline-offset: -2px; }
+[data-jev-fold="collapse"] > .jev-veil:focus-visible { outline: 2px solid var(--jev-ad-ring); outline-offset: -2px; }
 
 /* The expand/collapse animation for the single-line fold lives in content.js, and only plays for on-screen posts. */
 

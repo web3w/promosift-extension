@@ -375,7 +375,7 @@
     const who = el.__jevAuthor ? [el.__jevAuthor] : [];
 
     const willShow = revealed.has(sent.get(el));
-    const wasFolded = el.classList.contains("jev-fold") && !el.classList.contains("jev-reveal");
+    const wasFolded = el.dataset.jevFold === "collapse" && el.dataset.jevRevealed !== "true";
     // Keyed by content signature: content folded once still appears pre-folded (no animation replay)
     // if its element gets recycled and rebuilt.
     const sig = sent.get(el);
@@ -385,6 +385,8 @@
       markBody(el, site);
       el.classList.add("jev-fold");
       el.dataset.jevFold = "collapse";
+      // X 悬停重绘可能覆盖帖子的 class；独立属性保存折叠状态，避免未点击就露出正文。
+      el.dataset.jevRevealed = String(willShow);
       el.classList.toggle("jev-reveal", willShow);
       const v = mountVeil(el);
       if (v) {
@@ -414,7 +416,7 @@
     if (!target) return null;
     const badge = target.closest(".jev-badge");
     if (badge?.__jevItem) return { el: badge.__jevItem, badge: true };
-    const el = target.closest(".jev-fold:not(.jev-reveal)");
+    const el = target.closest('[data-jev-fold="collapse"]:not([data-jev-revealed="true"])');
     return el && target.closest(".jev-body, .jev-veil") ? { el, badge: false } : null;
   }
   function onPointCapture(e) {
@@ -430,7 +432,7 @@
       if (!e.repeat) send({ type: "openSidePanel" }, () => {});
       return;
     }
-    setRevealed(hit.el, hit.badge ? !hit.el.classList.contains("jev-reveal") : true);
+    setRevealed(hit.el, hit.badge ? hit.el.dataset.jevRevealed !== "true" : true);
   }
   for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "keydown"]) addEventListener(type, onPointCapture, true);
 
@@ -438,6 +440,7 @@
     el.__jevAnim?.cancel();
     el.classList.remove("jev-fold", "jev-reveal");
     delete el.dataset.jevFold;
+    delete el.dataset.jevRevealed;
     el.__jevVeil?.remove();
     el.__jevVeil = null;
   }
@@ -446,7 +449,10 @@
   function setRevealed(el, on) {
     const sig = sent.get(el);
     if (sig) on ? revealed.add(sig) : revealed.delete(sig);
-    const toggle = () => el.classList.toggle("jev-reveal", on);
+    const toggle = () => {
+      el.dataset.jevRevealed = String(on);
+      el.classList.toggle("jev-reveal", on);
+    };
     if (el.dataset.jevFold !== "collapse") {
       toggle(); // Plain labeled posts have no fold bar, so no clip animation is needed.
     } else if (reduceMotion()) {
@@ -616,7 +622,7 @@
       show(badge) {
         if (!node) build();
         clearTimeout(hideTimer);
-        const res = badge.__jevResult && { ...badge.__jevResult, __literal: badge.__jevLiteral, __folded: !!badge.closest(".jev-fold") };
+        const res = badge.__jevResult && { ...badge.__jevResult, __literal: badge.__jevLiteral, __folded: !!badge.closest('[data-jev-fold="collapse"]') };
         node.innerHTML = content(res);
         if (res && !res.ok && res.code !== "quota") node.querySelector(".jev-tip-err").textContent = res.error || t("tipUnknownError");
         const r = badge.getBoundingClientRect();
@@ -925,9 +931,10 @@
     retries.clear();
     foldedSigs.clear();
     document.querySelectorAll(".jev-badge, .jev-veil").forEach((b) => b.remove());
-    document.querySelectorAll(".jev-ad, .jev-fold, .jev-reveal").forEach((el) => {
+    document.querySelectorAll(".jev-ad, .jev-fold, .jev-reveal, [data-jev-fold], [data-jev-revealed]").forEach((el) => {
       el.classList.remove("jev-ad", "jev-fold", "jev-reveal");
       delete el.dataset.jevFold;
+      delete el.dataset.jevRevealed;
     });
     for (const site of SITES)
       document.querySelectorAll(site.item).forEach((el) => {

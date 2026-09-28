@@ -7,7 +7,7 @@
   "googleCancelled": { "message": "Google 登录已取消，可以重试或使用邮箱。" },
   "googleUnavailable": { "message": "Google 登录尚未启用，请先使用邮箱。" },
   "googleFailed": { "message": "未能完成 Google 登录，请重试或使用邮箱。" },
-  "dataConsentDescription": { "message": "我同意隐私政策，并同意将帖子、作者信息、引用和匹配关键词发送给 PromoSift/Jev 进行分析。" },
+  "dataConsentDescription": { "message": "我同意隐私政策，将帖子、作者信息、引用和匹配关键词发送给 PromoSift/Jev 分析，并将当前 X 账号和显示名称保存到我的 PromoSift 账户。" },
   "dataConsentFailed": { "message": "无法保存同意记录，请重试。" },
   "extName": { "message": "PromoSift" },
   "extDescription": { "message": "PromoSift 识别 X（Twitter）上的硬广、软广和引流内容；可折叠广告、屏蔽关键词、标注 AI 生成内容。" },

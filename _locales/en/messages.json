@@ -7,7 +7,7 @@
   "googleCancelled": { "message": "Google sign-in was cancelled. You can try again or use email." },
   "googleUnavailable": { "message": "Google sign-in is not enabled yet. Please use email." },
   "googleFailed": { "message": "Google sign-in could not be completed. Please try again or use email." },
-  "dataConsentDescription": { "message": "I agree to the Privacy Policy and to sending posts, author information, quotes, and matching keywords to PromoSift/Jev for analysis." },
+  "dataConsentDescription": { "message": "I agree to the Privacy Policy, to sending posts, author information, quotes, and matching keywords to PromoSift/Jev for analysis, and to saving my current X handle and display name with my PromoSift account." },
   "dataConsentFailed": { "message": "Could not save your consent. Please try again." },
   "extName": { "message": "PromoSift" },
   "extDescription": { "message": "PromoSift spots likely promotions on X (Twitter). Label or fold posts, filter keywords, and flag possible AI-written text." },
