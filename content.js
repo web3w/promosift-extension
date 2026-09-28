@@ -71,6 +71,38 @@
   // 登录不等于同意：首次自动识别必须先在插件中明确授权。
   const canCheck = () => settings.dataConsent === true && (settings.authenticated || settings.keySource === "user");
   let settingsVersion = 0;
+  let reportedXProfile = "";
+  let xProfilePending = false;
+  let xProfileRetryAt = 0;
+
+  function readXProfile() {
+    // 只读取左侧当前账号菜单，避免把帖子作者或正在访问的主页当成登录用户。
+    const menu = document.querySelectorAll('[data-testid="SideNav_AccountSwitcher_Button"]')[0];
+    const avatar = menu?.querySelector('[data-testid^="UserAvatar-Container-"]');
+    const handle = avatar?.getAttribute("data-testid")?.match(/^UserAvatar-Container-([A-Za-z0-9_]{1,15})$/)?.[1];
+    const name = avatar?.querySelector("img[alt]")?.getAttribute("alt")?.trim();
+    // 按产品字段约定：id 是不含 @ 的账号，username 是显示名称，不是 X 数字 ID。
+    return handle && name ? { x_user_id: handle, x_username: name.slice(0, 100) } : null;
+  }
+
+  function reportXProfile() {
+    if (!settings.authenticated || settings.dataConsent !== true || xProfilePending) return;
+    const profile = readXProfile();
+    if (!profile) { reportedXProfile = ""; return; }
+    const signature = JSON.stringify(profile);
+    if (signature === reportedXProfile || Date.now() < xProfileRetryAt) return;
+    const currentVersion = settingsVersion;
+    xProfilePending = true;
+    send({ type: "reportXProfile", profile }, (res) => {
+      xProfilePending = false;
+      if (currentVersion !== settingsVersion) return reportXProfile();
+      if (!res?.ok) { xProfileRetryAt = Date.now() + 60_000; return; }
+      reportedXProfile = signature;
+      xProfileRetryAt = 0;
+      // 在途请求期间可能切换 X 账号；成功后重新读取，按顺序保存当前账号。
+      reportXProfile();
+    });
+  }
   let displayChangePaused = false;
   // Threshold for meaning-based keyword matches: in practice "just briefly mentioned" scores around 0.7;
   // only 0.8+ reliably means the content is actually about the topic.
@@ -821,6 +853,7 @@
 
   function scan() {
     if (!alive()) return shutdown();
+    reportXProfile();
     syncPage();
     for (const site of SITES) {
       document.querySelectorAll(site.item).forEach((el) => {
@@ -870,6 +903,8 @@
 
   function reset() {
     settingsVersion++;
+    reportedXProfile = "";
+    xProfileRetryAt = 0;
     displayChangePaused = false;
     foundAds.clear();
     reportCount();
@@ -912,7 +947,7 @@
   function start() {
     syncTheme();
     scan();
-    mo.observe(document.body, { childList: true, subtree: true });
+    mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-testid", "alt"] });
   }
 
   // Wait for the page to finish loading and the browser to go idle before starting to label posts.

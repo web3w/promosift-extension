@@ -25,6 +25,44 @@ async function waitFor(predicate) {
 }
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => clone(body) });
 
+test("X 页面账号独立上报，仅发送两个字段且零额度不阻止上报", async () => {
+  const h = harness(session("alice", 0), () => response({ ok: true }));
+  const profile = { x_user_id: "promosift", x_username: "PromoSift", cookie: "must-not-leave" };
+  assert.equal((await h.message({ type: "reportXProfile", profile }, "https://x.com/home", 1)).ok, true);
+  assert.equal(h.calls[0].url, `${API_BASE}/v1/me/x-profile`);
+  assert.deepEqual(h.calls[0].body, { x_user_id: "promosift", x_username: "PromoSift" });
+  assert.equal(h.storage.account.credits, 0);
+});
+
+test("X 账号上报拒绝非 X 标签页、未登录、未同意和非法字段", async () => {
+  const message = { type: "reportXProfile", profile: { x_user_id: "promosift", x_username: "PromoSift" } };
+  const h = harness(session());
+  for (const [url, tab] of [[POPUP, undefined], ["https://example.com/", 1], ["https://x.com.evil.test/", 1], ["https://x.com/home", undefined]]) {
+    assert.equal((await h.message(message, url, tab)).code, "forbidden");
+  }
+  for (const profile of [null, {}, { x_user_id: "@promosift", x_username: "PromoSift" }, { x_user_id: "valid", x_username: " " }, { x_user_id: "valid", x_username: "x".repeat(101) }]) {
+    assert.equal((await h.message({ ...message, profile }, "https://twitter.com/home", 1)).code, "invalid_x_profile");
+  }
+  assert.equal(h.calls.length, 0);
+  for (const [initial, code] of [[{}, "auth_required"], [{ ...session(), dataConsent: false }, "consent_required"]]) {
+    const blocked = harness(initial);
+    assert.equal((await blocked.message(message, "https://x.com/home", 1)).code, code);
+    assert.equal(blocked.calls.length, 0);
+  }
+});
+
+test("X 账号上报途中切换 PromoSift 会话时丢弃旧响应", async () => {
+  let finish;
+  const h = harness(session(), () => new Promise(resolve => { finish = resolve; }));
+  const pending = h.message({ type: "reportXProfile", profile: { x_user_id: "promosift", x_username: "PromoSift" } }, "https://x.com/home", 1);
+  await waitFor(() => finish);
+  await h.set(session("bob"));
+  finish(response({ ok: true }));
+  assert.equal((await pending).code, "session_changed");
+  assert.equal(h.calls[0].init.headers.Authorization, "Bearer alice-token");
+  assert.equal(h.storage.account.id, "bob");
+});
+
 // Testing only goes through Chrome messages and the context menu entry point; every request is intercepted here to avoid hitting a real service or billing.
 function harness(initial = {}, remote = () => response(serverResult()), timers = { setTimeout, clearTimeout }, identity = {}) {
   const storage = clone(initial);

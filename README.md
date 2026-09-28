@@ -77,6 +77,8 @@ UI strings live in `_locales/en/messages.json` and `_locales/zh_CN/messages.json
 
 ## Privacy
 
+While signed in to PromoSift with data processing enabled, the extension also reads the current X account menu and saves its handle (`x_user_id`, without `@`) and display name (`x_username`) to your PromoSift account. It skips this when X is signed out or the menu is unavailable. These are the latest page-observed values, not a numeric X ID, an OAuth binding, or proof of a follow. They are not sent to Jev and do not consume credits.
+
 The extension only runs on X pages. It sends the visible post text, author, quoted content, and the platform's own ad labels to the account service for classification; it does not collect or upload anything outside the page, and does not track browsing across other sites. For how the account service itself handles caching, retention, and third-party model calls, see that service's own privacy documentation.
 
 ## License

@@ -408,6 +408,18 @@ async function classify(state, topics = [], meta) {
 }
 const errorResponse = (error) => ({ ok: false, code: error instanceof PromoSiftError ? error.code : "other", error: String(error?.message || error) });
 
+async function reportXProfile(profile) {
+  const ctx = await context();
+  if (!ctx.auth) throw new PromoSiftError("auth_required", "Please log in to PromoSift first");
+  if (ctx.settings.dataConsent !== true) throw new PromoSiftError("consent_required", "Please agree to data processing first");
+  if (!profile || typeof profile.x_user_id !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(profile.x_user_id)
+      || typeof profile.x_username !== "string" || !profile.x_username.trim() || profile.x_username.length > 100) {
+    throw new PromoSiftError("invalid_x_profile", "Invalid X account information");
+  }
+  // 当前页面账号只是观察记录；不绑定 X、不调用模型，也不消耗识别额度。
+  return api("/v1/me/x-profile", { method: "POST", body: { x_user_id: profile.x_user_id, x_username: profile.x_username.trim() }, ctx });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const reply = (promise) => {
     promise.then(sendResponse, (error) => sendResponse(errorResponse(error)));
@@ -416,11 +428,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const trusted = sender.url === chrome.runtime.getURL("popup.html");
   const xTab = Number.isInteger(sender.tab?.id) && /^https:\/\/(?:x|twitter)\.com\//.test(sender.url || "");
   // Login and logout may only be called from the extension popup; the page's content script has no account-management privileges.
-  if (!["getSettings", "classify", "setBadgeCount", "openSidePanel"].includes(msg?.type) && !trusted) {
+  if (!["getSettings", "classify", "setBadgeCount", "openSidePanel", "reportXProfile"].includes(msg?.type) && !trusted) {
     sendResponse({ ok: false, code: "forbidden", error: "Only the extension popup can perform this action" });
     return false;
   }
   switch (msg?.type) {
+    case "reportXProfile": {
+      if (!xTab) { sendResponse({ ok: false, code: "forbidden" }); return false; }
+      return reply(reportXProfile(msg.profile));
+    }
     case "openSidePanel": {
       if (!xTab) {
         sendResponse({ ok: false, code: "forbidden" });
