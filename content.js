@@ -309,6 +309,14 @@
 
   function render(el, site, res) {
     if (res && !res.ok && res.code === "quota") return onQuota(el, site);
+    // 模型超时只记服务端日志；撤下加载标记，不向用户展示失败或伪造检测结果。
+    if (res && !res.ok && res.code === "upstream_timeout") {
+      el.__jevBadge?.remove();
+      el.__jevBadge = null;
+      tip.hide();
+      applyFold(el, site, null);
+      return;
+    }
     const b = mountBadge(el, site);
     el.classList.remove("jev-ad");
     b.__jevResult = res;
@@ -750,10 +758,10 @@
       if (sent.get(el) !== sig) return;
       render(el, site, res);
       // Only auto-retry once for transient failures, to avoid repeatedly hammering the service (and consuming credits) while it's down.
-      if (res && !res.ok && (res.code === "upstream" || res.code === "network") && !retries.has(sig)) {
+      if (res && !res.ok && ["upstream", "network", "upstream_timeout"].includes(res.code) && !retries.has(sig)) {
         retries.set(sig, true);
         setTimeout(() => {
-          if (currentVersion !== settingsVersion || sent.get(el) !== sig) return;
+          if (currentVersion !== settingsVersion || checkedOn !== location.href || !el.isConnected || sent.get(el) !== sig) return;
           sent.delete(el);
           check(el, site);
         }, RETRY_AFTER_MS);

@@ -293,6 +293,17 @@ test("selected text on X and Twitter uses the X context and returns the result t
   }
 });
 
+test("选中文本检测超时不弹出技术错误，其他错误仍提示", async () => {
+  for (const code of ["upstream_timeout", "upstream"]) {
+    const app = harness(session(), () => response({ ok: false, code, error: "internal failure" }, 503));
+    await app.install();
+    await app.click({ menuItemId: app.menus[0].id, selectionText: "A post to check" }, { id: 7, url: "https://x.com/home" });
+    await tick();
+    assert.equal(app.calls.length, 1);
+    assert.equal(app.toasts.length, code === "upstream_timeout" ? 0 : 1);
+  }
+});
+
 test("public settings carry no account token, and mark unauthenticated when logged out", async () => {
   const app = harness({ mode: "fold", keywords: ["AI"] });
   const settings = await app.message({ type: "getSettings" });

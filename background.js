@@ -488,7 +488,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const now = await assertCurrent(ctx);
     await chrome.tabs.sendMessage(tab.id, { type: "showToast", result: { ...result, isAd: result.prob >= now.settings.threshold }, text });
   } catch (error) {
-    if (error.code === "session_changed") return;
+    // 超时由服务端归档；手动检测入口也不弹出技术失败提示。
+    if (error.code === "session_changed" || error.code === "upstream_timeout") return;
     chrome.tabs.sendMessage(tab.id, { type: "showToast", error: String(error.message || error) }).catch(() => {});
   }
 });

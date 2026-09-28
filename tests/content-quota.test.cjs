@@ -17,6 +17,7 @@ function loadPage(exhausted = false) {
   const observers = [];
   const idleTasks = [];
   const timers = [];
+  let now = 0;
   let listener;
   class Element {
     constructor(tag = "span") {
@@ -92,7 +93,8 @@ function loadPage(exhausted = false) {
     Element, document, window: { requestIdleCallback: true },
     IntersectionObserver: Observer, MutationObserver: Observer,
     requestIdleCallback: callback => idleTasks.push(callback),
-    setTimeout: callback => timers.push(callback), clearTimeout() {},
+    setTimeout: (callback, delay = 0) => { const timer = { callback, at: now + delay }; timers.push(timer); return timer; },
+    clearTimeout: timer => { const index = timers.indexOf(timer); if (index >= 0) timers.splice(index, 1); },
     addEventListener: (type, callback) => handlers.set(type, [...(handlers.get(type) || []), callback]),
     removeEventListener() {}, getComputedStyle: () => ({ backgroundColor: "rgb(0, 0, 0)" }),
     innerHeight: 800, innerWidth: 1200, matchMedia: () => ({ matches: true })
@@ -123,9 +125,14 @@ function loadPage(exhausted = false) {
   };
   const start = () => { messages.find(m => m.type === "getSettings").callback({ ...accountSettings, quotaExhausted: exhausted }); flush(); };
   const intersect = (...posts) => { observers[0].callback(posts.map(target => ({ target, isIntersecting: true }))); flush(); };
-  const mutate = () => { observers[1].callback(); while (timers.length) timers.shift()(); flush(); };
+  const advance = ms => {
+    now += ms;
+    for (let index; (index = timers.findIndex(timer => timer.at <= now)) >= 0;) timers.splice(index, 1)[0].callback();
+    flush();
+  };
+  const mutate = () => { observers[1].callback(); advance(300); };
   const badges = () => document.querySelectorAll(".jev-badge");
-  return { messages, elements, addArticle, addTime, addMetric, start, intersect, mutate, badges,
+  return { messages, elements, addArticle, addTime, addMetric, start, intersect, mutate, badges, advance,
     message: message => listener(message),
     observed: () => observers[0].observed,
     activate(badge, type = "click", key) {
@@ -278,5 +285,41 @@ test("浏览量不读取引用卡片、嵌套帖子、时间或收藏，缺失�
     const request = page.messages.find(message => message.type === "classify");
     assert.equal(request.meta.counts?.views, own?.text ? 42 : undefined);
     assert.equal(request.meta.publishedAt, "2026-09-26T04:00:00Z");
+  }
+});
+
+test("模型超时静默撤下标记，DOM 更新不重复请求，60 秒后仅重试一次", () => {
+  const page = loadPage(); const post = page.addArticle("post with a temporary timeout");
+  const calls = () => page.messages.filter(m => m.type === "classify");
+  page.start(); page.intersect(post);
+  calls()[0].callback({ ok: false, code: "upstream_timeout", error: "internal timeout" });
+  assert.equal(page.badges().length, 0);
+  page.mutate();
+  assert.equal(calls().length, 1);
+  page.advance(59_699);
+  assert.equal(calls().length, 1);
+  page.advance(1);
+  assert.equal(calls().length, 2);
+  calls()[1].callback({ ok: false, code: "upstream_timeout", error: "internal timeout" });
+  page.advance(120_000); page.mutate();
+  assert.equal(calls().length, 2);
+  assert.equal(page.badges().length, 0);
+  assert.equal(page.elements.some(el => el.className === "jev-toast"), false);
+});
+
+test("超时重试成功后才展示结果；切换账号或移除帖子取消延迟重试", () => {
+  for (const action of ["success", "switch", "remove"]) {
+    const page = loadPage(); const post = page.addArticle("post for " + action);
+    const calls = () => page.messages.filter(m => m.type === "classify");
+    page.start(); page.intersect(post);
+    calls()[0].callback({ ok: false, code: "upstream_timeout" });
+    if (action === "switch") page.message({ type: "settingsChanged", settings: { ...accountSettings, authenticated: false } });
+    if (action === "remove") post.remove();
+    page.advance(60_000);
+    assert.equal(calls().length, action === "success" ? 2 : 1);
+    if (action === "success") {
+      calls()[1].callback(success);
+      assert.equal(page.badges()[0].dataset.state, "ok");
+    }
   }
 });
