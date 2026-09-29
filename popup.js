@@ -80,7 +80,7 @@ function setCheckInAccount(id) {
   if (id) updateCheckIn();
 }
 async function updateCheckIn(claim = false) {
-  if (!checkInAccountId || checkInBusy || (claim && checkInState?.claimed)) return;
+  if (!checkInAccountId || checkInBusy || (claim && checkInState?.claimed)) return null;
   const current = ++checkInVersion;
   checkInBusy = true;
   $("checkIn").disabled = true;
@@ -88,7 +88,7 @@ async function updateCheckIn(claim = false) {
   if (claim || !checkInState) $("checkIn").textContent = claim ? t("checkInClaiming") : t("checkInQuerying");
   // Only reads state on init/refresh; a write request is only sent when the user explicitly clicks claim. Discard stale responses after switching accounts.
   const res = await send({ type: claim ? "claimCheckIn" : "getCheckIn" });
-  if (current !== checkInVersion) return;
+  if (current !== checkInVersion) return null;
   checkInBusy = false;
   if (res?.ok && res.account.id === checkInAccountId) {
     checkInState = res.checkIn;
@@ -106,6 +106,7 @@ async function updateCheckIn(claim = false) {
     $("checkIn").textContent = checkInState ? t("checkInRetryClaim") : t("checkInRetryQuery");
     $("checkInNote").textContent = res?.error || t("checkInNotConfirmed");
   }
+  return res;
 }
 $("checkIn").addEventListener("click", () => updateCheckIn(Boolean(checkInState)));
 
@@ -165,9 +166,8 @@ async function load() {
   setSeg("threshold", String(s.threshold), false);
   renderStats(stats);
   renderSettingsSummary();
+  // syncAccount 触发的签到查询同时返回并缓存最新余额，初始化不再单独请求账户。
   await syncAccount();
-  // syncAccount 已触发首次签到查询，初始化刷新余额时不再重复查询。
-  if (authenticated) refreshAccount({ refreshCheckIn: false });
 }
 async function syncAccount({ resetLoginState = true } = {}) {
   const current = ++viewVersion;
@@ -208,12 +208,14 @@ function renderAccount(account) {
   $("accountEmail").title = account.email;
   $("accountUsedLine").textContent = t("accountUsedTotal", fmt(account.used));
 }
-async function refreshAccount({ refreshCheckIn = true } = {}) {
-  const res = await send({ type: "getAccount" });
+async function refreshAccount() {
+  // 签到状态接口同时返回账户余额并由后台写入缓存，一次请求代替 getAccount + getCheckIn。
+  const res = await updateCheckIn();
+  // 已有查询进行中时由那次请求负责刷新。
+  if (!res) return;
   await syncAccount();
-  if (res?.ok) {
-    if (refreshCheckIn) await updateCheckIn();
-  } else if (["auth_required", "account_disabled"].includes(res?.code)) {
+  if (res.ok) return;
+  if (["auth_required", "account_disabled"].includes(res.code)) {
     await syncAccount();
     message($("loginStatus"), res.error, "error");
   } else if (res?.code !== "session_changed") {

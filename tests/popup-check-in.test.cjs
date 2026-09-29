@@ -50,7 +50,20 @@ test('初始化即使首次签到查询先完成，也只查询一次签到状�
   await p.context.load();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(p.calls.filter(type => type === 'getCheckIn').length, 1);
-  assert.equal(p.calls.filter(type => type === 'getAccount').length, 1);
+  // 签到查询已返回并缓存余额，初始化不再额外请求账户。
+  assert.equal(p.calls.filter(type => type === 'getAccount').length, 0);
+});
+
+test('窗口重新聚焦只发一次签到查询刷新余额，进行中不重复请求', async () => {
+  const p = page();
+  p.context.setCheckInAccount('alice');
+  p.finish(false);
+  await new Promise(resolve => setImmediate(resolve));
+  const refreshing = p.context.refreshAccount();
+  p.context.refreshAccount();
+  p.finish(false);
+  await refreshing;
+  assert.deepEqual(p.calls, ['getCheckIn', 'getCheckIn']);
 });
 
 test('重置时间跟随浏览器时区，并使用重置日期对应的夏令时', async () => {
