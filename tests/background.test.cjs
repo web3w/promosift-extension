@@ -240,7 +240,7 @@ test("余额跨零时单独同步暂停和恢复，不广播会清空页面结�
 });
 
 test("服务端 402 也同步额度耗尽，重新确认余额后解除暂停", async () => {
-  const app = harness(session(), ({ url }) => url.endsWith("/v1/me")
+  const app = harness(session(), ({ url }) => url.endsWith("/v1/check-in")
     ? response({ ok: true, account: account() })
     : response({ error: "Out of credits" }, 402));
   app.watchedTabs.push({ id: 7 });
@@ -250,7 +250,7 @@ test("服务端 402 也同步额度耗尽，重新确认余额后解除暂停", 
   assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, true);
   assert.deepEqual(app.broadcasts[0], { type: "quotaChanged", exhausted: true });
   // 账户内容完全相同时不会触发 storage.onChanged，仍需解除 402 的临时暂停。
-  assert.equal((await app.message({ type: "getAccount" })).ok, true);
+  assert.equal((await app.message({ type: "getCheckIn" })).ok, true);
   assert.equal((await app.message({ type: "getSettings" })).quotaExhausted, false);
   assert.deepEqual(app.broadcasts.at(-1), { type: "quotaChanged", exhausted: false });
   assert.ok(app.toasts.every(({ message }) => message.type === "quotaChanged"));
@@ -421,7 +421,7 @@ test("logging in with a verification code saves an isolated session, and neither
   assert.equal(settings.authenticated, true);
   assert.doesNotMatch(JSON.stringify(settings), /private-token|alice@example|auth"/);
   assert.deepEqual(app.accessLevels, [{ accessLevel: "TRUSTED_CONTEXTS" }]);
-  for (const type of ["login", "logout", "getAccount", "requestCode"]) {
+  for (const type of ["login", "logout", "getCheckIn", "requestCode"]) {
     assert.equal((await app.message({ type }, "https://x.com/home")).code, "forbidden");
   }
 });
@@ -441,7 +441,7 @@ test("an incorrect verification code does not create a session; logout revokes t
 
 test("a 401 clears the login state without auto-registering; a failed network logout is not disguised as revoked", async () => {
   const app = harness(session(), () => response({ ok: false, code: "auth_required", error: "Session expired" }, 401));
-  assert.equal((await app.message({ type: "getAccount" })).code, "auth_required");
+  assert.equal((await app.message({ type: "getCheckIn" })).code, "auth_required");
   assert.equal(app.storage.auth, null);
   assert.equal(app.calls.length, 1);
   const offline = harness(session(), () => { throw Error("network offline"); });
@@ -452,13 +452,13 @@ test("a 401 clears the login state without auto-registering; a failed network lo
 test("running out of credits stops requests; refreshing after a top-up recovers immediately with no midnight freeze", async () => {
   let exhausted = true;
   const app = harness(session(), ({ url }) => {
-    if (url.endsWith("/v1/me")) return response({ ok: true, account: account("alice", 20) });
+    if (url.endsWith("/v1/check-in")) return response({ ok: true, account: account("alice", 20) });
     return exhausted ? response({ ok: false, code: "quota", error: "Out of credits" }, 402) : response(serverResult(account("alice", 19, 1)));
   });
   for (const text of ["post one", "post two"]) assert.equal((await app.message({ type: "classify", state: { text } })).code, "quota");
   assert.equal(app.calls.length, 1);
   exhausted = false;
-  assert.equal((await app.message({ type: "getAccount" })).ok, true);
+  assert.equal((await app.message({ type: "getCheckIn" })).ok, true);
   assert.equal((await app.message({ type: "classify", state: { text: "post after top-up" } })).ok, true);
   assert.equal(app.calls.length, 3);
 });
@@ -501,7 +501,7 @@ test("an earlier account response cannot overwrite a more recent refresh result"
   });
   const old = app.message({ type: "classify", state: { text: "out-of-order responses" } });
   await waitFor(() => release);
-  await app.message({ type: "getAccount" });
+  await app.message({ type: "getCheckIn" });
   release();
   assert.equal((await old).ok, true);
   assert.deepEqual(app.storage.account, account("alice", 50, 1));
@@ -520,7 +520,7 @@ test("logging out cancels a verification-code login that has not finished yet", 
 
 test("a disabled account clears its session, and each account's successful requests are counted separately", async () => {
   const disabled = harness(session(), () => response({ ok: false, code: "account_disabled", error: "Account disabled" }, 403));
-  assert.equal((await disabled.message({ type: "getAccount" })).code, "account_disabled");
+  assert.equal((await disabled.message({ type: "getCheckIn" })).code, "account_disabled");
   assert.equal(disabled.storage.auth, null);
   const app = harness(session(), ({ url, init }) => {
     if (url.endsWith("/verify-code")) return response({ ok: true, token: "bob-token", expiresAt: Date.now() + 60_000, account: account("bob", 30) });

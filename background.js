@@ -468,7 +468,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "login": return reply(login(msg.email, msg.code));
     case "loginWithGoogle": return reply(loginWithGoogle());
     case "logout": return reply(logout());
-    case "getAccount": return reply(context().then((ctx) => api("/v1/me", { ctx })).then((data) => ({ ok: true, account: data.account })));
     case "getCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx })));
     // Only an explicit claim action from the popup sends a POST; reading account/check-in status never claims credits.
     case "claimCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx, method: "POST", body: {} })));

@@ -91,7 +91,6 @@ button:disabled { cursor: default; }
 
 /* ---------- Account / credits card ---------- */
 .card { background: var(--ps-surf-1); border-radius: var(--ps-r-card); padding: 13px 14px; }
-.sep { height: 1px; background: var(--ps-line); margin: 10px -14px; }
 .line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .lbl { font-size: 11px; color: var(--ps-t3); letter-spacing: 0.02em; }
 .mail { font-size: 11.5px; color: var(--ps-t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -109,7 +108,6 @@ button:disabled { cursor: default; }
 .btn:hover:not(:disabled) { border-color: var(--ps-line-2); }
 .btn-brand { background: var(--ps-brand); color: var(--ps-on-brand); font-weight: 500; }
 .btn-brand:hover:not(:disabled) { filter: brightness(1.06); border-color: transparent; }
-.btn-danger { background: var(--ps-danger); color: #fff; font-weight: 500; }
 .btn[disabled] { background: var(--ps-surf-3); color: var(--ps-t3); cursor: default; border-color: transparent; opacity: 0.7; }
 .btn-block { width: 100%; justify-content: center; }
 .btn36 { height: 36px; padding: 0 14px; border-radius: var(--ps-r-ctrl); font-size: 12.5px; }
