@@ -81,8 +81,9 @@
     const avatar = menu?.querySelector('[data-testid^="UserAvatar-Container-"]');
     const handle = avatar?.getAttribute("data-testid")?.match(/^UserAvatar-Container-([A-Za-z0-9_]{1,15})$/)?.[1];
     const name = avatar?.querySelector("img[alt]")?.getAttribute("alt")?.trim();
-    // 按产品字段约定：id 是不含 @ 的账号，username 是显示名称，不是 X 数字 ID。
-    return handle && name ? { x_user_id: handle, x_username: name.slice(0, 100) } : null;
+    // 数字 ID 取自 X 登录 Cookie twid（u%3D<id>），按十进制字符串上报；读不到时为 null。
+    const id = (document.cookie || "").match(/(?:^|;\s*)twid=u(?:%3D|=)([1-9][0-9]{0,18})(?:;|$)/)?.[1] || null;
+    return handle && name ? { x_user_id: id, x_user_handle: handle, x_user_name: name.slice(0, 100) } : null;
   }
 
   function reportXProfile() {

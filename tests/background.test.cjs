@@ -25,22 +25,22 @@ async function waitFor(predicate) {
 }
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => clone(body) });
 
-test("X 页面账号独立上报，仅发送两个字段且零额度不阻止上报", async () => {
+test("X 页面账号独立上报，仅发送三个字段且零额度不阻止上报", async () => {
   const h = harness(session("alice", 0), () => response({ ok: true }));
-  const profile = { x_user_id: "promosift", x_username: "PromoSift", cookie: "must-not-leave" };
+  const profile = { x_user_id: "1234567890123456789", x_user_handle: "promosift", x_user_name: "PromoSift", cookie: "must-not-leave" };
   assert.equal((await h.message({ type: "reportXProfile", profile }, "https://x.com/home", 1)).ok, true);
   assert.equal(h.calls[0].url, `${API_BASE}/v1/me/x-profile`);
-  assert.deepEqual(h.calls[0].body, { x_user_id: "promosift", x_username: "PromoSift" });
+  assert.deepEqual(h.calls[0].body, { x_user_id: "1234567890123456789", x_user_handle: "promosift", x_user_name: "PromoSift" });
   assert.equal(h.storage.account.credits, 0);
 });
 
 test("X 账号上报拒绝非 X 标签页、未登录、未同意和非法字段", async () => {
-  const message = { type: "reportXProfile", profile: { x_user_id: "promosift", x_username: "PromoSift" } };
+  const message = { type: "reportXProfile", profile: { x_user_id: null, x_user_handle: "promosift", x_user_name: "PromoSift" } };
   const h = harness(session());
   for (const [url, tab] of [[POPUP, undefined], ["https://example.com/", 1], ["https://x.com.evil.test/", 1], ["https://x.com/home", undefined]]) {
     assert.equal((await h.message(message, url, tab)).code, "forbidden");
   }
-  for (const profile of [null, {}, { x_user_id: "@promosift", x_username: "PromoSift" }, { x_user_id: "valid", x_username: " " }, { x_user_id: "valid", x_username: "x".repeat(101) }]) {
+  for (const profile of [null, {}, { x_user_id: null, x_user_handle: "@promosift", x_user_name: "PromoSift" }, { x_user_id: null, x_user_handle: "valid", x_user_name: " " }, { x_user_id: null, x_user_handle: "valid", x_user_name: "x".repeat(101) }, { x_user_id: "12a", x_user_handle: "valid", x_user_name: "Valid" }, { x_user_handle: "valid", x_user_name: "Valid" }]) {
     assert.equal((await h.message({ ...message, profile }, "https://twitter.com/home", 1)).code, "invalid_x_profile");
   }
   assert.equal(h.calls.length, 0);
@@ -54,7 +54,7 @@ test("X 账号上报拒绝非 X 标签页、未登录、未同意和非法字段
 test("X 账号上报途中切换 PromoSift 会话时丢弃旧响应", async () => {
   let finish;
   const h = harness(session(), () => new Promise(resolve => { finish = resolve; }));
-  const pending = h.message({ type: "reportXProfile", profile: { x_user_id: "promosift", x_username: "PromoSift" } }, "https://x.com/home", 1);
+  const pending = h.message({ type: "reportXProfile", profile: { x_user_id: null, x_user_handle: "promosift", x_user_name: "PromoSift" } }, "https://x.com/home", 1);
   await waitFor(() => finish);
   await h.set(session("bob"));
   finish(response({ ok: true }));
