@@ -160,10 +160,10 @@ async function load() {
   // 只预填空输入框，避免异步加载覆盖用户已经输入的邮箱。
   if (!$("email").value) $("email").value = lastLoginEmail || account?.email || "";
   currentSettings = s;
-  setSeg("mode", s.mode === "blur" ? "fold" : s.mode, false);
+  setSeg("mode", s.mode === "blur" ? "fold" : s.mode);
   renderChips(s.keywords || []);
   $("aiDetect").setAttribute("aria-checked", String(s.aiDetect !== false));
-  setSeg("threshold", String(s.threshold), false);
+  setSeg("threshold", String(s.threshold));
   renderStats(stats);
   renderSettingsSummary();
   // syncAccount 触发的签到查询同时返回并缓存最新余额，初始化不再单独请求账户。
@@ -533,7 +533,7 @@ function renderStats(stats = { checked: 0, ads: 0 }) {
 
 // ---------- Segmented control ----------
 
-function setSeg(name, value, animate = true) {
+function setSeg(name, value) {
   const seg = document.querySelector(`.seg[data-name="${name}"]`);
   const buttons = [...seg.querySelectorAll("button")];
   let i = buttons.findIndex((b) => b.dataset.value === value);

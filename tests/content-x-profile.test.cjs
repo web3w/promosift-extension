@@ -29,7 +29,7 @@ function page(initialProfile, initialSettings = signedIn) {
     onMessage: { addListener(fn) { listener = fn; } }
   };
   const document = {
-    body: {}, documentElement: { dataset: {} }, readyState: "complete",
+    body: {}, documentElement: { dataset: {} }, readyState: "complete", cookie: "guest_id=v1; twid=u%3D1234567890123456789; lang=en",
     querySelectorAll(selector) {
       return selector === '[data-testid="SideNav_AccountSwitcher_Button"]' && profile ? [menu] : [];
     }
@@ -56,9 +56,9 @@ function page(initialProfile, initialSettings = signedIn) {
   };
 }
 
-test("读取当前账号菜单的 handle 和显示名称，零额度也上报且重复 DOM 更新不重发", () => {
+test("读取 twid 数字 ID 与当前账号菜单的 handle 和显示名称，零额度也上报且重复 DOM 更新不重发", () => {
   const p = page({ handle: "promosift", name: "PromoSift" });
-  assert.deepEqual(JSON.parse(JSON.stringify(p.reports()[0].profile)), { x_user_id: "promosift", x_username: "PromoSift" });
+  assert.deepEqual(JSON.parse(JSON.stringify(p.reports()[0].profile)), { x_user_id: "1234567890123456789", x_user_handle: "promosift", x_user_name: "PromoSift" });
   p.mutate();
   assert.equal(p.reports().length, 1);
   p.reports()[0].callback({ ok: true });
@@ -90,10 +90,10 @@ test("上报途中切换 X 账号或修改名称，按顺序提交最新页面�
   p.switchX({ handle: "second", name: "Second" });
   assert.equal(p.reports().length, 1);
   p.reports()[0].callback({ ok: true });
-  assert.equal(p.reports()[1].profile.x_user_id, "second");
+  assert.equal(p.reports()[1].profile.x_user_handle, "second");
   p.reports()[1].callback({ ok: true });
   p.switchX({ handle: "second", name: "Renamed" });
-  assert.equal(p.reports()[2].profile.x_username, "Renamed");
+  assert.equal(p.reports()[2].profile.x_user_name, "Renamed");
 });
 
 test("切换 PromoSift 会话后同一 X 账号仍会上报，旧回调不会阻止新会话", () => {

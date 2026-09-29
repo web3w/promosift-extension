@@ -412,12 +412,13 @@ async function reportXProfile(profile) {
   const ctx = await context();
   if (!ctx.auth) throw new PromoSiftError("auth_required", "Please log in to PromoSift first");
   if (ctx.settings.dataConsent !== true) throw new PromoSiftError("consent_required", "Please agree to data processing first");
-  if (!profile || typeof profile.x_user_id !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(profile.x_user_id)
-      || typeof profile.x_username !== "string" || !profile.x_username.trim() || profile.x_username.length > 100) {
+  if (!profile || (profile.x_user_id !== null && (typeof profile.x_user_id !== "string" || !/^[1-9][0-9]{0,18}$/.test(profile.x_user_id)))
+      || typeof profile.x_user_handle !== "string" || !/^[A-Za-z0-9_]{1,15}$/.test(profile.x_user_handle)
+      || typeof profile.x_user_name !== "string" || !profile.x_user_name.trim() || profile.x_user_name.length > 100) {
     throw new PromoSiftError("invalid_x_profile", "Invalid X account information");
   }
   // 当前页面账号只是观察记录；不绑定 X、不调用模型，也不消耗识别额度。
-  return api("/v1/me/x-profile", { method: "POST", body: { x_user_id: profile.x_user_id, x_username: profile.x_username.trim() }, ctx });
+  return api("/v1/me/x-profile", { method: "POST", body: { x_user_id: profile.x_user_id, x_user_handle: profile.x_user_handle, x_user_name: profile.x_user_name.trim() }, ctx });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -468,7 +469,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "login": return reply(login(msg.email, msg.code));
     case "loginWithGoogle": return reply(loginWithGoogle());
     case "logout": return reply(logout());
-    case "getAccount": return reply(context().then((ctx) => api("/v1/me", { ctx })).then((data) => ({ ok: true, account: data.account })));
     case "getCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx })));
     // Only an explicit claim action from the popup sends a POST; reading account/check-in status never claims credits.
     case "claimCheckIn": return reply(context().then((ctx) => api("/v1/check-in", { ctx, method: "POST", body: {} })));
